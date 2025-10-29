@@ -1,0 +1,1092 @@
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+// Corrected Firebase v9 imports
+import { initializeApp, getApps, getApp } from 'firebase/app';
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, addDoc, collection, serverTimestamp, setLogLevel } from 'firebase/firestore';
+
+// --- SVG Icons (Using more modern Heroicons/Lucide style where appropriate) ---
+
+const IconUser = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+    </svg>
+);
+
+const IconDollar = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599.1M12 8V7m0 1v8m0 0c-1.657 0-3-.895-3-2s1.343-2 3-2 3-.895 3-2-1.343-2-3-2m0 8c1.11 0 2.08.402 2.599-1M12 16v-1m0 1v1m0-1c-1.11 0-2.08-.402-2.599-1M12 16v-1" />
+    </svg>
+);
+
+const IconCalendar = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+    </svg>
+);
+
+const IconChart = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+    </svg>
+);
+
+const IconCheck = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+    </svg>
+);
+
+const IconChevronRight = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+    </svg>
+);
+
+const IconAlert = () => (
+     <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+         <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+     </svg>
+);
+
+const IconInfo = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+);
+
+// Added Sparkles icon for Gemini features
+const IconSparkles = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+    </svg>
+);
+
+// --- Reusable Form Components ---
+
+const InputGroup = ({ id, label, type = 'number', value, onChange, placeholder, icon, description, min, max }) => (
+    <div className="flex flex-col space-y-2">
+        <label htmlFor={id} className="text-sm font-medium text-gray-700 flex items-center">
+            {label}
+            {description && (
+                <div className="relative group ml-2">
+                    <span className="text-blue-500 cursor-help"><IconInfo /></span>
+                    <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-10 pointer-events-none">
+                        {description}
+                    </span>
+                </div>
+            )}
+        </label>
+        <div className="relative rounded-lg shadow-sm"> {/* Slightly less rounded */}
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400"> {/* Adjusted padding */}
+                {icon}
+            </div>
+            <input
+                type={type}
+                id={id}
+                name={id}
+                value={value}
+                onChange={onChange}
+                placeholder={placeholder}
+                min={min}
+                max={max}
+                className="block w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition sm:text-sm" // Adjusted padding, border, focus ring
+            />
+        </div>
+    </div>
+);
+
+const SelectGroup = ({ id, label, value, onChange, children, description }) => (
+    <div className="flex flex-col space-y-2">
+        <label htmlFor={id} className="text-sm font-medium text-gray-700 flex items-center">
+            {label}
+            {description && (
+                <div className="relative group ml-2">
+                    <span className="text-blue-500 cursor-help"><IconInfo /></span>
+                    <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-10 pointer-events-none">
+                        {description}
+                    </span>
+                </div>
+            )}
+        </label>
+        <select
+            id={id}
+            name={id}
+            value={value}
+            onChange={onChange}
+            className={`block w-full pl-3 pr-10 py-2.5 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition sm:text-sm ${value === '' ? 'text-gray-400' : 'text-gray-900'}`} // Conditional text color for placeholder
+        >
+            {children}
+        </select>
+    </div>
+);
+
+const CheckboxGroup = ({ id, label, checked, onChange, description }) => (
+    <label htmlFor={id} className={`flex items-start p-4 bg-white rounded-lg border transition cursor-pointer ${checked ? 'border-indigo-500 ring-2 ring-indigo-200' : 'border-gray-200 hover:border-gray-300'}`}> {/* Adjusted padding, rounded, border/ring */}
+        <input
+            id={id}
+            name={id}
+            type="checkbox"
+            checked={checked}
+            onChange={onChange}
+            className="h-4 w-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500 mt-0.5" // Adjusted size, margin
+        />
+        <div className="ml-3"> {/* Adjusted margin */}
+            <span className="text-sm font-medium text-gray-900">{label}</span> {/* Adjusted font size/weight */}
+            <p className="text-xs text-gray-500">{description}</p> {/* Adjusted font size */}
+        </div>
+    </label>
+);
+
+const RadioGroup = ({ name, value, label, description, checked, onChange }) => (
+    <label className={`flex p-4 rounded-lg border-2 transition cursor-pointer ${checked ? 'bg-indigo-50 border-indigo-500 shadow-md' : 'bg-white border-gray-200 hover:border-gray-300'}`}> {/* Adjusted padding, rounded, colors */}
+        <input
+            type="radio"
+            name={name}
+            value={value}
+            checked={checked}
+            onChange={onChange}
+            className="mt-0.5 h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300" // Adjusted size, margin
+        />
+        <div className="ml-3"> {/* Adjusted margin */}
+            <span className="text-sm font-semibold text-gray-900">{label}</span> {/* Adjusted font size/weight */}
+            <p className="text-xs text-gray-600 mt-1">{description}</p> {/* Adjusted font size */}
+        </div>
+    </label>
+);
+
+// --- Credit Report Upload Component ---
+const CreditReportUpload = ({ onReportAnalyzed }) => {
+    const [uploadStatus, setUploadStatus] = useState('idle'); // idle, uploading, analyzing, complete
+
+    const handleFileUpload = async (file) => {
+        if (!file) return;
+        setUploadStatus('uploading');
+        setTimeout(() => {
+            setUploadStatus('analyzing');
+            setTimeout(() => {
+                const mockAnalysis = { ficoScore: 642, totalDebt: 28750, accountsEnrolling: 6, positiveAccounts: 2, oldestAccountAge: 9, utilization: 85, totalCreditLimit: 35000 };
+                onReportAnalyzed(mockAnalysis);
+                setUploadStatus('complete');
+            }, 1500); // Reduced delay
+        }, 800); // Reduced delay
+    };
+
+    return (
+        // Adjusted styling for consistency
+        <div className="bg-indigo-50 rounded-lg p-6 border border-indigo-200 mb-8 text-center">
+            <h3 className="text-base font-semibold text-gray-800 mb-1">
+                🚀 Want Maximum Accuracy?
+            </h3>
+            <p className="text-sm text-gray-600 mb-4">
+                Upload your credit report for precise, personalized projections.
+            </p>
+
+            {uploadStatus === 'idle' && (
+                <div className="border-2 border-dashed border-indigo-300 rounded-lg p-6 hover:border-indigo-400 transition">
+                    <input type="file" accept=".pdf,.jpg,.png" onChange={(e) => handleFileUpload(e.target.files[0])} className="hidden" id="credit-report-upload" />
+                    <label htmlFor="credit-report-upload" className="cursor-pointer flex flex-col items-center">
+                        <svg className="w-10 h-10 text-indigo-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                        <span className="text-sm text-indigo-600 font-medium">Click to upload report</span>
+                        <span className="text-xs text-gray-500 mt-1">PDF, JPG, PNG (Max 10MB)</span>
+                    </label>
+                </div>
+            )}
+            {/* Adjusted loading/complete states for better feedback */}
+            {uploadStatus === 'uploading' && ( <div className="text-center py-6"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto mb-3"></div><p className="text-sm text-indigo-600 font-medium">Uploading...</p></div> )}
+            {uploadStatus === 'analyzing' && ( <div className="text-center py-6"><div className="animate-pulse text-3xl mb-3">🔍</div><p className="text-sm text-indigo-600 font-medium">Analyzing profile...</p><p className="text-xs text-gray-500 mt-1">Just a moment</p></div> )}
+            {uploadStatus === 'complete' && ( <div className="bg-green-100 rounded-lg p-3"><div className="flex items-center justify-center"><IconCheck className="w-5 h-5 text-green-600 mr-2" /><p className="text-sm text-green-700 font-medium">Analysis Complete! Form updated.</p></div></div> )}
+        </div>
+    );
+};
+
+
+// --- Step Components ---
+
+// Step 1: Scenario
+const Step1Scenario = ({ userData, updateUserData }) => (
+    <div className="max-w-xl mx-auto px-4"> {/* Reduced max-width */}
+        <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-6 md:p-10"> {/* Adjusted padding/rounded */}
+            <h2 className="text-xl font-semibold text-gray-800 mb-2">Step 1: Choose Your Scenario</h2> {/* Adjusted font size */}
+            <p className="text-sm text-gray-600 mb-6">Are you exploring options or already enrolled?</p> {/* Adjusted font size/margin */}
+
+            <div className="space-y-4"> {/* Reduced spacing */}
+                <RadioGroup name="scenarioType" label="Pre-Enrollment" description="Simulate your full journey from today, including the initial credit score dip." value="pre-enrollment" checked={userData.scenarioType === 'pre-enrollment'} onChange={(e) => updateUserData({ scenarioType: e.target.value })} />
+                <RadioGroup name="scenarioType" label="Progress Tracker" description="You're enrolled. Simulate your remaining journey from your current score." value="progress-tracker" checked={userData.scenarioType === 'progress-tracker'} onChange={(e) => updateUserData({ scenarioType: e.target.value })} />
+            </div>
+
+            {userData.scenarioType === 'progress-tracker' && (
+                <div className="mt-6 pt-6 border-t border-gray-200 space-y-4"> {/* Adjusted margin/padding/spacing */}
+                    <h3 className="text-lg font-medium text-gray-700">Your Program Progress</h3> {/* Adjusted font size/weight */}
+                    <InputGroup id="monthsInProgram" label="Months in Program" value={userData.monthsInProgram} onChange={(e) => updateUserData({ monthsInProgram: e.target.value })} placeholder="e.g., 6" icon={<IconCalendar />} description="How long have you been enrolled?" min="0" />
+                    <InputGroup id="settledAccounts" label="Settled Accounts" value={userData.settledAccounts} onChange={(e) => updateUserData({ settledAccounts: e.target.value })} placeholder="e.g., 2" icon={<IconCheck />} description="How many debts are successfully settled?" min="0" />
+                    <SelectGroup id="programPhase" label="Current Program Phase" value={userData.programPhase} onChange={(e) => updateUserData({ programPhase: e.target.value })} description="What's your current program status?">
+                        <option value="accumulation">Accumulation (Building savings)</option>
+                        <option value="negotiation">Negotiation (Actively settling)</option>
+                        <option value="settled">Settled (All debts resolved)</option>
+                    </SelectGroup>
+                </div>
+            )}
+        </div>
+    </div>
+);
+
+// Step 2: Profile
+const Step2Profile = ({ userData, updateUserData }) => {
+    const [durationAdvice, setDurationAdvice] = useState('Shorter timelines require higher monthly payments.');
+    const [calculatedUtil, setCalculatedUtil] = useState(null); // State to display calculated utilization
+
+    // --- Auto-calculate Utilization ---
+    useEffect(() => {
+        const debt = parseFloat(userData.totalDebt);
+        const limit = parseFloat(userData.totalCreditLimit);
+
+        if (!isNaN(debt) && !isNaN(limit) && limit > 0) {
+            const utilPercent = Math.round((debt / limit) * 100);
+            setCalculatedUtil(utilPercent); // Store the calculated percentage
+
+            // Automatically select the correct range based on calculation
+            let utilValue = 100; // Default to highest if over 75
+            if (utilPercent <= 10) utilValue = 10;
+            else if (utilPercent <= 30) utilValue = 30;
+            else if (utilPercent <= 50) utilValue = 50;
+            else if (utilPercent <= 75) utilValue = 75;
+
+            // Only update if the calculated range is different from current state
+            // to avoid potential infinite loops if user manually changes it later
+            if (userData.utilization !== utilValue) {
+                 console.log(`Auto-updating utilization range to ${utilValue}% based on calculation: ${utilPercent}%`);
+                updateUserData({ utilization: utilValue });
+            }
+        } else {
+            setCalculatedUtil(null); // Reset if inputs are invalid or limit is zero
+        }
+    }, [userData.totalDebt, userData.totalCreditLimit, userData.utilization, updateUserData]); // Added userData.utilization dependency
+
+
+    const handleDurationChange = (e) => {
+        const duration = e.target.value;
+        // Simplified advice messages
+        let adviceMap = {
+            '24': 'Aggressive plan, fastest recovery, highest payments.',
+            '36': 'Standard plan, good balance of speed and payment.',
+            '48': 'Balanced approach, moderate pace and payments.',
+            '60': 'Comfortable pace, lower monthly payments.',
+            '72': 'Extended plan for high balances, maximum flexibility.'
+        };
+        setDurationAdvice(adviceMap[duration] || 'Select a timeline to see advice.');
+         // Ensure value is parsed as int, handle empty string case
+         updateUserData({ programTimeline: duration ? parseInt(duration) : '' });
+    };
+
+    const handleReportAnalyzed = useCallback((analysis) => {
+        let utilValue = 100; // Default to highest range
+        if (analysis.utilization <= 10) utilValue = 10;
+        else if (analysis.utilization <= 30) utilValue = 30;
+        else if (analysis.utilization <= 50) utilValue = 50;
+        else if (analysis.utilization <= 75) utilValue = 75;
+
+        updateUserData({
+            ficoScore: analysis.ficoScore,
+            totalDebt: analysis.totalDebt,
+            accountsEnrolling: analysis.accountsEnrolling,
+            positiveAccounts: analysis.positiveAccounts,
+            oldestAccountAge: analysis.oldestAccountAge,
+            totalCreditLimit: analysis.totalCreditLimit,
+            utilization: utilValue,
+            // Keep programTimeline if user selected it before uploading
+             programTimeline: userData.programTimeline === '' ? 36 : userData.programTimeline // Default to 36 if not set
+        });
+
+    }, [updateUserData, userData.programTimeline]);
+
+    return (
+        <div className="max-w-3xl mx-auto px-4"> {/* Reduced max-width */}
+            <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
+                {/* Simplified Hero */}
+                <div className="bg-gradient-to-r from-indigo-700 via-purple-700 to-blue-700 text-white p-8 text-center">
+                     <h1 className="text-3xl font-bold mb-2 leading-tight">Your Financial Snapshot</h1>
+                     <p className="text-indigo-100 text-sm">Input your details or upload a report for accuracy.</p>
+                </div>
+
+                <div className="p-6 md:p-10">
+                    <CreditReportUpload onReportAnalyzed={handleReportAnalyzed} />
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5"> {/* Adjusted gap */}
+                        <InputGroup id="ficoScore" label="Current FICO Score" value={userData.ficoScore} onChange={(e) => updateUserData({ ficoScore: e.target.value })} placeholder="e.g., 650" icon={<IconChart />} description="Your FICO Score (300-850)." min="300" max="850" />
+                        <InputGroup id="monthlyIncome" label="Total Monthly Income" value={userData.monthlyIncome} onChange={(e) => updateUserData({ monthlyIncome: e.target.value })} placeholder="e.g., 5000" icon={<IconDollar />} description="Your total net monthly income." min="0" />
+                        <InputGroup id="totalDebt" label="Total Debt for Resolution" value={userData.totalDebt} onChange={(e) => updateUserData({ totalDebt: e.target.value })} placeholder="e.g., 25000" icon={<IconDollar />} description="Unsecured debt (credit cards, loans) to enroll." min="0" />
+                        <InputGroup id="totalCreditLimit" label="Total Credit Limit (All Cards)" value={userData.totalCreditLimit} onChange={(e) => updateUserData({ totalCreditLimit: e.target.value })} placeholder="e.g., 30000" icon={<IconDollar />} description="Sum of limits on ALL your credit cards." min="0" />
+
+                        {/* Display Calculated Utilization */}
+                         {calculatedUtil !== null && (
+                             <div className="md:col-span-2 text-sm text-center bg-gray-100 p-2 rounded-md">
+                                 Calculated Utilization: <span className="font-semibold">{calculatedUtil}%</span> (Used to auto-select range below)
+                             </div>
+                         )}
+
+                         <SelectGroup id="utilization" label="Utilization Range (Enrolled)" value={userData.utilization} onChange={(e) => updateUserData({ utilization: parseInt(e.target.value) })} description="Average balance/limit ratio on ENROLLED accounts.">
+                             {/* Ranges updated slightly for clarity */}
+                             <option value={10}>0% - 10% (Excellent)</option>
+                             <option value={30}>11% - 30% (Good)</option>
+                             <option value={50}>31% - 50% (Fair)</option>
+                             <option value={75}>51% - 75% (Poor)</option>
+                             <option value={100}>76% - 100%+ (Very Poor)</option>
+                         </SelectGroup>
+
+                         <InputGroup id="accountsEnrolling" label="# Debt Accounts Enrolling" value={userData.accountsEnrolling} onChange={(e) => updateUserData({ accountsEnrolling: e.target.value })} placeholder="e.g., 4" icon={<IconUser />} description="How many separate accounts?" min="1" />
+                         <InputGroup id="positiveAccounts" label="# Positive Accounts Kept" value={userData.positiveAccounts} onChange={(e) => updateUserData({ positiveAccounts: e.target.value })} placeholder="e.g., 1" icon={<IconCheck />} description="Accounts staying open & paid?" min="0" />
+                         <InputGroup id="oldestAccountAge" label="Oldest Account Age (Years)" value={userData.oldestAccountAge} onChange={(e) => updateUserData({ oldestAccountAge: e.target.value })} placeholder="e.g., 7" icon={<IconCalendar />} description="Age of your longest open account?" min="0" />
+
+
+                        <div className="md:col-span-2">
+                             <SelectGroup id="programTimeline" label="Expected Program Timeline" value={userData.programTimeline} onChange={handleDurationChange} description="Select your desired program length.">
+                                 <option value="" disabled>Select Timeline...</option> {/* Default option */}
+                                 <option value={24}>24 Months (Aggressive)</option>
+                                 <option value={36}>36 Months (Standard)</option>
+                                 <option value={48}>48 Months (Balanced)</option>
+                                 <option value={60}>60 Months (Comfortable)</option>
+                                 <option value={72}>72 Months (Extended)</option>
+                             </SelectGroup>
+                        </div>
+
+                        {/* Display Duration Advice */}
+                         {userData.programTimeline && ( // Only show advice if a timeline is selected
+                             <div className="md:col-span-2 mt-1">
+                                 <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg flex items-start space-x-2">
+                                     <IconInfo className="w-4 h-4 text-indigo-500 flex-shrink-0 mt-0.5" />
+                                     <p className="text-xs text-indigo-700">{durationAdvice}</p>
+                                 </div>
+                             </div>
+                         )}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// Step 3: Tools
+const Step3Tools = ({ userData, updateUserData, showError }) => {
+    // State for Gemini API call specific to tools
+    const [toolAdviceLoading, setToolAdviceLoading] = useState(false);
+    const [toolAdvice, setToolAdvice] = useState('');
+    const [toolAdviceError, setToolAdviceError] = useState(null);
+
+    // --- Gemini API Call for Tool Advice ---
+    const fetchToolAdvice = useCallback(async () => {
+        console.log("Fetching tool advice...");
+        setToolAdviceLoading(true);
+        setToolAdvice('');
+        setToolAdviceError(null);
+
+        // Construct the prompt for Gemini based on Step 2 data
+        const prompt = `
+            Act as a helpful credit advisor. Based on the user's financial snapshot below, briefly explain (1-2 sentences each) how Secured Credit Cards, Credit Builder Loans, and becoming an Authorized User could specifically benefit them during their debt resolution journey. If certain tools seem less relevant due to their profile (e.g., high income might make credit builder loan less critical, or low number of positive accounts makes secured card more important), mention that subtly. Keep it concise and encouraging.
+
+            User Snapshot:
+            - FICO Score: ${userData.ficoScore || 'Not specified'}
+            - Total Debt: $${userData.totalDebt || 'Not specified'}
+            - Monthly Income: $${userData.monthlyIncome || 'Not specified'}
+            - Positive Accounts Kept: ${userData.positiveAccounts || 0}
+            - Oldest Account Age: ${userData.oldestAccountAge || 'Not specified'} years
+            - Planned Timeline: ${userData.programTimeline || 'Not specified'} months
+
+            Focus on the *why* these tools help rebuild credit after settlement.
+        `;
+
+        const apiKey = ""; // Provided by environment
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+        const payload = { contents: [{ parts: [{ text: prompt }] }] };
+
+        // Basic Fetch (no retry for this one, keep it simple)
+        try {
+            const response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData?.error?.message || `API Error ${response.status}`);
+            }
+
+            const result = await response.json();
+            const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+            if (text) {
+                setToolAdvice(text);
+            } else {
+                throw new Error("Empty response from AI.");
+            }
+        } catch (error) {
+            console.error("Error fetching tool advice:", error);
+            setToolAdviceError(`Couldn't get advice: ${error.message}`);
+            showError("Failed to load advice on credit building tools."); // Use main error display
+        } finally {
+            setToolAdviceLoading(false);
+        }
+
+    }, [userData, showError]); // Dependencies
+
+
+    return (
+    <div className="max-w-xl mx-auto px-4"> {/* Reduced max-width */}
+        <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-6 md:p-10"> {/* Adjusted padding/rounded */}
+            <h2 className="text-xl font-semibold text-gray-800 mb-2">Step 3: Supercharge Your Recovery</h2> {/* Adjusted font size */}
+            <p className="text-sm text-gray-600 mb-6">Select credit-building tools you plan to use. These can speed up score recovery.</p> {/* Adjusted font size/margin */}
+
+             {/* Advice Section */}
+            <div className="mb-6 p-4 bg-indigo-50 border border-indigo-200 rounded-lg">
+                {!toolAdvice && !toolAdviceLoading && (
+                    <button
+                        onClick={fetchToolAdvice}
+                        className="inline-flex items-center text-sm font-medium text-indigo-600 hover:text-indigo-800"
+                    >
+                        <IconSparkles className="mr-1.5" /> Why use these tools? Get AI Advice
+                    </button>
+                )}
+                {toolAdviceLoading && (
+                    <div className="flex items-center space-x-2 text-sm text-gray-600">
+                         <svg className="animate-spin h-4 w-4 text-indigo-600" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                         <span>Generating advice...</span>
+                     </div>
+                )}
+                 {toolAdviceError && <p className="text-sm text-red-600">{toolAdviceError}</p>}
+                {toolAdvice && (
+                     <div className="prose prose-sm max-w-none text-gray-700">
+                         {toolAdvice.split('\n').map((para, i) => <p key={i} className="mb-1 last:mb-0">{para}</p>)}
+                     </div>
+                )}
+            </div>
+
+            <div className="space-y-4 mb-8"> {/* Reduced spacing */}
+                <CheckboxGroup id="securedCard" label="Secured Credit Card" description="Helps establish new positive payment history." checked={userData.securedCard} onChange={(e) => updateUserData({ securedCard: e.target.checked })} />
+                <CheckboxGroup id="creditBuilder" label="Credit Builder Loan" description="Adds an installment loan to improve credit mix." checked={userData.creditBuilder} onChange={(e) => updateUserData({ creditBuilder: e.target.checked })} />
+                <CheckboxGroup id="authorizedUser" label="Authorized User" description="Piggyback on someone else's good credit history." checked={userData.authorizedUser} onChange={(e) => updateUserData({ authorizedUser: e.target.checked })} />
+            </div>
+
+            <div className="pt-6 border-t border-gray-200"> {/* Adjusted padding */}
+                <h3 className="text-lg font-medium text-gray-800 mb-2">Save Your Results</h3> {/* Adjusted font size */}
+                <p className="text-sm text-gray-600 mb-4">Enter details to save this simulation and discuss it.</p> {/* Adjusted font size/margin */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4"> {/* Adjusted gap */}
+                    <InputGroup id="firstName" label="First Name" type="text" value={userData.firstName} onChange={(e) => updateUserData({ firstName: e.target.value })} placeholder="e.g., Jane" icon={<IconUser />} />
+                    <InputGroup id="phone" label="Phone Number" type="tel" value={userData.phone} onChange={(e) => updateUserData({ phone: e.target.value })} placeholder="(555) 123-4567" icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" /></svg>} />
+                    <div className="md:col-span-2">
+                        <InputGroup id="emailCapture" label="Email Address" type="email" value={userData.email} onChange={(e) => updateUserData({ email: e.target.value })} placeholder="jane.doe@example.com" icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>} />
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    );
+};
+
+
+const LoadingSpinner = () => (
+    <div className="flex flex-col items-center justify-center py-16 text-center"> {/* Adjusted padding */}
+        <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div> {/* Adjusted size/color */}
+        <h3 className="text-xl font-semibold text-gray-800 mt-6">Calculating Your Comeback...</h3> {/* Adjusted font size/weight */}
+        <p className="text-sm text-gray-600 mt-2">Running your data through our AI projection model.</p> {/* Adjusted font size */}
+    </div>
+);
+
+// --- Results Page Components ---
+
+const AcceleratorMotivation = ({ results, userData, setCurrentStep }) => {
+    // ... (keep existing logic, styling adjustments below)
+    const accelerators = useMemo(() => [ // Use useMemo
+        { id: 'securedCard', title: 'Secured Credit Card', points: 30, color: 'blue' },
+        { id: 'creditBuilder', title: 'Credit Builder Loan', points: 25, color: 'green' },
+        { id: 'authorizedUser', title: 'Authorized User', points: 10, color: 'purple' },
+    ], []);
+
+    const unselectedAccelerators = useMemo(() => accelerators.filter(accel => !userData[accel.id]), [accelerators, userData]);
+
+
+    if (unselectedAccelerators.length === 0) {
+        return (
+            <div className="bg-yellow-100 border border-yellow-300 rounded-lg p-3 text-center mt-6"> {/* Adjusted styling */}
+                <p className="text-sm font-medium text-yellow-800">✅ You're optimized with all recovery tools selected!</p>
+            </div>
+        );
+    }
+
+     // Define safe color classes
+     const colorClasses = {
+         blue: { border: 'border-blue-200', bg: 'bg-blue-100', text: 'text-blue-700' },
+         green: { border: 'border-green-200', bg: 'bg-green-100', text: 'text-green-700' },
+         purple: { border: 'border-purple-200', bg: 'bg-purple-100', text: 'text-purple-700' },
+     };
+
+
+    return (
+        <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-xl p-6 border border-purple-200 shadow-md mt-6"> {/* Adjusted styling */}
+            <h3 className="text-lg font-semibold text-gray-800 mb-3 flex items-center"> {/* Adjusted styling */}
+                <svg className="w-5 h-5 text-purple-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                Accelerate Your Comeback
+            </h3>
+            <p className="text-sm text-gray-600 mb-4">
+                Consider adding these tools for a potential boost:
+            </p>
+
+            <div className="space-y-2"> {/* Reduced spacing */}
+                {unselectedAccelerators.map(accel => {
+                     const colors = colorClasses[accel.color] || colorClasses.blue;
+                    return (
+                        <div key={accel.id} className={`flex items-center justify-between p-2.5 rounded-md bg-white border ${colors.border}`}> {/* Adjusted styling */}
+                            <div className="flex items-center">
+                                <span className={`w-5 h-5 rounded-full ${colors.bg} ${colors.text} flex items-center justify-center mr-2 text-xs`}> {/* Adjusted styling */}
+                                    {accel.id === 'securedCard' ? '💳' : accel.id === 'creditBuilder' ? '🏦' : '👥'}
+                                </span>
+                                <span className="text-sm font-medium text-gray-700">{accel.title}</span>
+                            </div>
+                            <span className={`text-base font-bold ${colors.text}`}> {/* Adjusted styling */}
+                                +{accel.points} pts
+                            </span>
+                        </div>
+                    );
+                })}
+            </div>
+
+            <button
+                onClick={() => setCurrentStep(3)}
+                className="w-full mt-4 bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold py-2.5 rounded-md transition-colors" // Adjusted styling
+            >
+                Review & Re-Calculate
+            </button>
+        </div>
+    );
+};
+
+const RecoveryTimeline = ({ results, userData }) => {
+    // ... (keep existing logic, styling adjustments below)
+     const dipScore = results.milestoneDipScore;
+     const stabilizationScore = results.milestoneStabilizationScore;
+     const recoveryScore = results.milestoneRecoveryScore;
+     const finalScore = results.projectedScore;
+     const initialScore = results.initialScore;
+     const dipChange = initialScore - dipScore;
+
+     const milestones = useMemo(() => { // Wrap milestones calculation in useMemo
+         const calculatedMilestones = [];
+         const startMonth = 12; const endMonth = 24; const stabilizationMonth = 12;
+         const gainPerMonth = (endMonth > startMonth) ? (recoveryScore - stabilizationScore) / (endMonth - startMonth) : 0;
+         for (let m = startMonth; m <= endMonth; m += 3) {
+             const monthsAfterStabilization = m - stabilizationMonth;
+             const score = Math.round(stabilizationScore + (gainPerMonth * monthsAfterStabilization));
+             calculatedMilestones.push({ month: m, score: score, title: `Month ${m}`, color: 'yellow', description: `Score progressing.` }); // Simplified title/desc
+         }
+         return calculatedMilestones;
+     }, [recoveryScore, stabilizationScore]); // Dependencies for milestones
+
+
+     const finalEvents = useMemo(() => { // Wrap finalEvents calculation in useMemo
+         const timelineNum = Number(userData.programTimeline) || 36;
+         const timelineEvents = [
+             { month: 0, score: initialScore, title: "Start", color: "blue", description: "Begin transformation." }, // Simplified
+             ...(userData.scenarioType === 'pre-enrollment' ? [{ month: "6-9", score: dipScore, title: "Strategic Dip", color: "red", description: `Est. -${dipChange} pts` }] : []), // Simplified
+             ...milestones,
+             { month: timelineNum, score: finalScore, title: "Graduation", color: "green", description: `Target achieved!` } // Simplified
+         ].filter(event => {
+             const monthNum = typeof event.month === 'string' ? 9 : event.month;
+             return monthNum <= timelineNum || event.month === 0 || event.month === "6-9";
+         });
+
+         // De-duplicate
+         return timelineEvents.reduce((acc, current) => {
+             const x = acc.find(item => item.month === current.month);
+             if (!x) return acc.concat([current]);
+             if (current.color === 'green') { acc.pop(); return acc.concat([current]); }
+             return acc;
+         }, []);
+     }, [userData.programTimeline, userData.scenarioType, initialScore, dipScore, dipChange, milestones, finalScore]); // Dependencies for finalEvents
+
+
+    return (
+        <div className="bg-gradient-to-br from-indigo-50 to-blue-100 rounded-xl p-6 border border-indigo-200"> {/* Adjusted gradient/border */}
+            <h3 className="text-lg font-semibold text-gray-800 mb-5 flex items-center"> {/* Adjusted font/margin */}
+                <svg className="w-5 h-5 text-indigo-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                Your Projected Recovery Journey
+            </h3>
+
+            <div className="relative pl-10"> {/* Adjusted padding */}
+                {/* Gradient line adjusted */}
+                <div className="absolute left-4 top-2 bottom-2 w-0.5 bg-gradient-to-b from-blue-300 via-red-300 via-yellow-300 to-green-300 rounded-full"></div>
+
+                <div className="space-y-6"> {/* Adjusted spacing */}
+                    {finalEvents.map((event, index) => {
+                         // Define safe color classes
+                        const textClasses = { blue: 'text-blue-700', red: 'text-red-700', green: 'text-green-700', yellow: 'text-yellow-700' };
+                        const bgClasses = { blue: 'bg-blue-600', red: 'bg-red-500', green: 'bg-green-600', yellow: 'bg-yellow-500' };
+                        const borderClasses = { blue: 'border-blue-200', red: 'border-red-200', green: 'border-green-200', yellow: 'border-yellow-200' }; // Lighter border
+                        const cardBgClasses = { blue: 'bg-blue-50', red: 'bg-red-50', green: 'bg-green-50', yellow: 'bg-yellow-50' }; // Light card bg
+
+
+                        let textColor = textClasses[event.color] || textClasses.blue;
+                        let bgColor = bgClasses[event.color] || bgClasses.blue;
+                        let borderColor = borderClasses[event.color] || borderClasses.blue; // Use lighter border
+                        let cardBg = cardBgClasses[event.color] || cardBgClasses.blue;
+
+                        return (
+                            <div key={index} className="flex items-center relative"> {/* Align items center */}
+                                {/* Smaller Dot */}
+                                <div className={`w-3 h-3 ${bgColor} rounded-full flex-shrink-0 absolute left-2.5 top-1/2 transform -translate-x-1/2 -translate-y-1/2 ring-2 ring-white z-10`}></div>
+
+                                <div className="ml-6 flex-1"> {/* Adjusted margin */}
+                                    <div className={`rounded-lg p-3 shadow-sm border ${borderColor} ${cardBg}`}> {/* Adjusted padding/rounded/shadow/border */}
+                                        <div className="flex justify-between items-center">
+                                            <div>
+                                                <h4 className={`text-sm font-semibold ${textColor}`}>{event.title} ({typeof event.month === 'string' ? 'Mo 6-9' : `Mo ${event.month}`})</h4>
+                                                <p className="text-xs text-gray-600 mt-0.5">{event.description}</p>
+                                            </div>
+                                            <div className="text-right flex-shrink-0 ml-3">
+                                                <div className={`text-lg font-bold ${textColor}`}>{event.score}</div>
+                                                <div className="text-xs text-gray-500 -mt-1">FICO</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// --- Main Results Component (Step 4) ---
+
+const Step4Results = ({ results, isLoading, userData, onReset, setCurrentStep }) => {
+     // State for Gemini API call
+     const [adviceLoading, setAdviceLoading] = useState(false);
+     const [personalizedAdvice, setPersonalizedAdvice] = useState('');
+     const [adviceError, setAdviceError] = useState(null);
+
+    // Use showError from App component via props or context if needed, otherwise define locally or remove.
+    // Assuming showError is passed down or available via context. If not, define it:
+    // const showError = (message) => { console.error(message); /* Basic fallback */ };
+
+
+     // --- Gemini API Call ---
+     const fetchPersonalizedAdvice = useCallback(async () => {
+         console.log("Fetching personalized advice...");
+         setAdviceLoading(true);
+         setPersonalizedAdvice('');
+         setAdviceError(null);
+
+         // **MODIFIED PROMPT**
+         const prompt = `
+             Act as a friendly financial advisor from CreDebtFree.com, specializing in comparing debt resolution (settlement) with other consolidation options, emphasizing the benefits of resolution.
+             Based on the following user data and simulation results for a debt resolution program, provide a concise (2-3 paragraphs max), personalized summary and actionable next steps.
+             Keep the tone positive and focused on their successful "credit comeback" through resolution.
+
+             User Input Data:
+             - Starting FICO Score: ${userData.ficoScore}
+             - Total Debt Considered: $${userData.totalDebt}
+             - Monthly Income: $${userData.monthlyIncome}
+             - Planned Timeline: ${userData.programTimeline} months
+             - Scenario: ${userData.scenarioType}
+             - Selected Tools: ${[userData.securedCard && 'Secured Card', userData.creditBuilder && 'Credit Builder Loan', userData.authorizedUser && 'Authorized User'].filter(Boolean).join(', ') || 'None'}
+
+             Simulation Results (Debt Resolution Program):
+             - Projected Final Score: ${results.projectedScore} (Gain of +${results.scoreGain} points)
+             - Projected Savings: $${results.savings.toLocaleString()}
+             - Estimated Recovery Time: ${results.recoveryTime}
+             - Post-Program DTI: ${results.postDTI}%
+             ${results.impactPenalty > 0 ? `- Includes an expected temporary score dip of -${results.impactPenalty} points early on.` : '- No major initial dip expected.'}
+
+             1. Briefly summarize the positive outcomes of the simulated debt resolution program (savings, score improvement).
+             2. Briefly compare this to common debt consolidation options (like balance transfer cards or personal loans), highlighting potential downsides of consolidation (e.g., often requires good credit initially, might not save as much money, interest costs). Frame debt resolution as a potentially more effective path for significant debt reduction and long-term credit rebuilding, despite the initial dip shown in the simulation (if applicable).
+             3. Offer 2 clear, actionable next steps related to proceeding with debt resolution (e.g., discussing the simulation with a specialist at CreDebtFree.com, considering the suggested credit building tools).
+         `;
+
+         const apiKey = ""; // Provided by environment
+         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+         const payload = { contents: [{ parts: [{ text: prompt }] }] };
+
+         let attempts = 0;
+         const maxAttempts = 5;
+         let delay = 1000;
+
+         while (attempts < maxAttempts) {
+             try {
+                 const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                 if (!response.ok) {
+                     if (response.status === 429 || response.status >= 500) { console.warn(`API call failed with status ${response.status}. Retrying...`); throw new Error(`API Error ${response.status}`); }
+                     else { const errorData = await response.json(); console.error("API Error:", errorData); setAdviceError(`Failed: ${errorData?.error?.message || response.statusText}`); setAdviceLoading(false); return; }
+                 }
+                 const result = await response.json();
+                 const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                 if (text) { setPersonalizedAdvice(text); } else { console.error("No text in Gemini response:", result); setAdviceError("AI response was empty."); }
+                 setAdviceLoading(false); return;
+             } catch (error) {
+                 console.error(`Attempt ${attempts + 1} failed:`, error); attempts++;
+                 if (attempts >= maxAttempts) { setAdviceError(`Failed after multiple attempts: ${error.message}`); setAdviceLoading(false); break; }
+                 await new Promise(resolve => setTimeout(resolve, delay)); delay *= 2;
+             }
+         }
+     }, [userData, results]); // Dependencies
+
+
+    if (isLoading) { return ( <div className="max-w-xl mx-auto px-4"><div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-10"><LoadingSpinner /></div></div> ); }
+    if (!results) { return ( <div className="max-w-xl mx-auto px-4 text-center"><div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-10"><h2 className="text-xl font-semibold text-red-600 mb-3">Calculation Required</h2><p className="text-sm text-gray-600 mb-5">Complete previous steps first.</p><button onClick={onReset} className="px-6 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md shadow-sm hover:bg-indigo-700">Start Over</button></div></div> ); }
+
+    const { scoreGain, recoveryTime, postDTI, savings } = results;
+    const companyBranding = "CreDebtFree.com";
+
+    const getConfidenceMessage = () => { /* ... (keep existing logic) ... */
+        if (results.impactPenalty > 0) { return { heading: `Temporary dip is part of the plan.`, text: `Expect an initial drop of **${results.impactPenalty} pts** (3-6 mo) to achieve **$${results.savings.toLocaleString()}** savings. Debt resolution leads to a full rebound.` }; }
+        return { heading: `Your comeback starts now.`, text: `We project a steady increase towards **+${results.scoreGain} pts** without a major dip. Savings of **$${results.savings.toLocaleString()}** fuel your recovery.` };
+    };
+    const confidence = getConfidenceMessage();
+
+    const FactorBadge = ({ factor, pre, post, color }) => { /* ... (keep existing logic & styling) ... */
+        const textClass = `text-${color}-600`;
+        const bgClass = `bg-${color}-100`;
+        return ( <div className="flex items-center justify-between py-1.5 border-b border-gray-100 last:border-b-0"><span className="text-xs font-medium text-gray-700">{factor}</span><div className="flex items-center space-x-1.5"><span className="text-xs text-gray-400 line-through">Pre: {pre}</span><span className={`text-xs font-semibold ${textClass} ${bgClass} px-1.5 py-0.5 rounded`}>Post: {post}</span></div></div> );
+    };
+
+    // Data for Factor Badges (keep existing logic)
+    const numUtilization = Number(userData.utilization); const numPositiveAccounts = Number(userData.positiveAccounts); const numOldestAccountAge = Number(userData.oldestAccountAge);
+    const utilizationPre = numUtilization > 75 ? "75%+" : numUtilization > 50 ? "51-75%" : numUtilization > 30 ? "31-50%" : "<30%";
+    const utilizationPost = "<10%"; const paymentPre = numUtilization > 50 ? "Poor" : "Fair"; const paymentPost = "Good"; const mixPre = numPositiveAccounts === 0 ? "Limited" : "Fair"; const mixPost = "Good"; const agePre = numOldestAccountAge < 5 ? "<5 yrs" : "5+ yrs"; const agePost = "Stable"; const newCreditPre = numOldestAccountAge < 5 ? "Fair" : "Good"; const newCreditPost = "Good";
+
+
+    return (
+        <div className="max-w-4xl mx-auto px-4"> {/* Reduced max-width */}
+            {/* Adjusted Header */}
+            <div className="bg-gradient-to-r from-indigo-700 via-purple-700 to-blue-700 rounded-xl p-6 mb-6 text-white shadow-lg">
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div className="text-center sm:text-left">
+                        <h2 className="text-xl font-semibold mb-1">Your Personalized Projection</h2>
+                        <div className="flex items-center justify-center sm:justify-start space-x-3 text-xs text-indigo-100">
+                            <span className="flex items-center"><IconCheck className="w-3 h-3 mr-1" /> Powered by {companyBranding}</span>
+                            <span className="flex items-center"><IconChart className="w-3 h-3 mr-1" /> AI Model</span>
+                        </div>
+                    </div>
+                    <div className="text-center sm:text-right bg-black bg-opacity-10 p-3 rounded-lg">
+                        <div className="text-2xl font-bold">{results.initialScore} → {results.projectedScore}</div>
+                        <div className="text-xs text-indigo-100 uppercase tracking-wide">FICO Journey</div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Main Content Card */}
+            <div className="p-6 bg-white rounded-xl shadow-xl border border-gray-100">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4 border-b pb-2">Key Projections</h3>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6"> {/* Adjusted gap */}
+                    {/* Simplified Stat Cards */}
+                    {[
+                        { label: 'Score Gain', value: `+${results.scoreGain} pts`, color: 'green' },
+                        { label: 'Recovery Time', value: results.recoveryTime, color: 'blue' },
+                        { label: 'Post-Prog. DTI', value: `${results.postDTI}%`, color: 'purple' },
+                        { label: 'Est. Savings', value: `$${results.savings.toLocaleString()}`, color: 'orange' }
+                    ].map(item => (
+                         <div key={item.label} className={`bg-${item.color}-50 rounded-lg p-3 border border-${item.color}-200 text-center`}>
+                             <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider">{item.label}</h4>
+                             <div className={`text-xl font-bold text-${item.color}-600 mt-1`}>{item.value}</div>
+                         </div>
+                    ))}
+                </div>
+
+                {/* Confidence Message */}
+                <div className="bg-yellow-100 border-l-4 border-yellow-400 p-3 mb-6 text-sm"> {/* Adjusted styling */}
+                     <div className="flex">
+                         <div className="flex-shrink-0 mt-0.5"><svg className="h-4 w-4 text-yellow-500" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" /></svg></div>
+                         <div className="ml-2 flex-1">
+                             <h4 className="font-semibold text-yellow-800" dangerouslySetInnerHTML={{ __html: confidence.heading.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
+                             <p className="mt-1 text-yellow-700" dangerouslySetInnerHTML={{ __html: confidence.text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
+                         </div>
+                     </div>
+                </div>
+
+                 {/* Gemini Personalized Advice Section */}
+                 <div className="mt-6 pt-6 border-t border-gray-200">
+                     <h3 className="text-lg font-semibold text-gray-800 mb-3">Personalized Next Steps</h3>
+                     {!personalizedAdvice && !adviceLoading && !adviceError && (
+                         <button onClick={fetchPersonalizedAdvice} className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                              <IconSparkles className="mr-1.5" /> Get AI-Powered Advice
+                         </button>
+                     )}
+                     {adviceLoading && ( /* Adjusted loading state */
+                         <div className="flex items-center space-x-2 text-sm text-gray-500"><svg className="animate-spin h-4 w-4 text-indigo-600" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><span>Generating advice...</span></div>
+                     )}
+                     {adviceError && ( /* Adjusted error state */
+                         <div className="mt-3 p-3 bg-red-50 border-l-4 border-red-400 text-sm text-red-700 flex items-start"><IconAlert className="h-5 w-5 text-red-400 mr-2 flex-shrink-0" /><div>{adviceError}<button onClick={fetchPersonalizedAdvice} className="ml-2 font-medium text-indigo-600 hover:text-indigo-500">Retry</button></div></div>
+                     )}
+                     {personalizedAdvice && ( /* Adjusted advice display */
+                         <div className="mt-3 prose prose-sm max-w-none text-gray-700 bg-indigo-50 p-4 rounded-lg border border-indigo-200">
+                              {personalizedAdvice.split('\n').map((paragraph, index) => (<p key={index} className="mb-2 last:mb-0">{paragraph}</p>))}
+                         </div>
+                     )}
+                 </div>
+
+
+                {/* Action Buttons */}
+                <div className="flex flex-col sm:flex-row gap-3 justify-center mt-8 pt-6 border-t border-gray-200"> {/* Adjusted spacing/gap */}
+                    <button onClick={onReset} className="w-full sm:w-auto border border-gray-300 text-gray-700 px-6 py-2.5 rounded-md text-sm font-medium hover:bg-gray-50 transition"> New Simulation </button>
+                     {(userData.email || userData.phone) ? (
+                         <button className="w-full sm:w-auto bg-gradient-to-r from-green-500 to-emerald-600 text-white px-6 py-2.5 rounded-md text-sm font-medium hover:from-green-600 hover:to-emerald-700 shadow-md"> Send My Report </button>
+                     ) : (
+                         <button onClick={() => setCurrentStep(3)} className="w-full sm:w-auto bg-gradient-to-r from-blue-600 to-indigo-700 text-white px-6 py-2.5 rounded-md text-sm font-semibold hover:shadow-lg transition transform hover:-translate-y-0.5"> Save & Get Full Report </button>
+                     )}
+                </div>
+            </div>
+
+            {/* Second Row: Timeline & FICO Factors */}
+            <div className="grid lg:grid-cols-3 gap-6 mt-6">
+                 {/* Timeline Container */}
+                 <div className="lg:col-span-2">
+                     <RecoveryTimeline results={results} userData={userData} />
+                 </div>
+                 {/* FICO Factor Analysis */}
+                 <div className="lg:col-span-1 bg-white rounded-xl shadow-xl p-6 border border-gray-100 h-full">
+                     <h3 className="text-lg font-semibold text-gray-900 mb-3">Weight Model Analysis</h3> {/* Adjusted font/margin */}
+                     <div className="space-y-0.5"> {/* Reduced spacing */}
+                         <FactorBadge factor={`Utiliz. (${Math.round((results.weights.utilization || 0) * 100)}%)`} pre={utilizationPre} post={utilizationPost} color="green" />
+                         <FactorBadge factor={`History (${Math.round((results.weights.paymentHistory || 0) * 100)}%)`} pre={paymentPre} post={paymentPost} color="blue" />
+                         <FactorBadge factor={`Acct. Age (${Math.round((results.weights.accountAge || 0) * 100)}%)`} pre={agePre} post={agePost} color="purple" />
+                         <FactorBadge factor={`Credit Mix (${Math.round((results.weights.creditMix || 0) * 100)}%)`} pre={mixPre} post={mixPost} color="yellow" />
+                         <FactorBadge factor={`New Credit (${Math.round((results.weights.newCredit || 0) * 100)}%)`} pre={newCreditPre} post={newCreditPost} color="indigo" />
+                         <p className="text-xs text-gray-500 pt-2" dangerouslySetInnerHTML={{ __html: "Weights adjust based on **score** & **DTI**.".replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
+                     </div>
+                 </div>
+            </div>
+
+            {/* Accelerator Motivation Panel */}
+            <AcceleratorMotivation results={results} userData={userData} setCurrentStep={setCurrentStep} />
+        </div>
+    );
+};
+
+
+// --- Trust & Security Component ---
+const TrustIndicators = () => (
+    // Updated styling for modern look
+    <div className="bg-gray-100 border-t border-gray-200 py-6 mt-10">
+        <div className="max-w-4xl mx-auto px-4">
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-x-6 gap-y-2 text-xs text-gray-500">
+                <span className="flex items-center"><svg className="w-4 h-4 text-green-500 mr-1.5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" /></svg>SSL Secured Connection</span>
+                <span className="flex items-center"><svg className="w-4 h-4 text-blue-500 mr-1.5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg>Data Encrypted</span>
+                <span className="flex items-center"><svg className="w-4 h-4 text-indigo-500 mr-1.5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707l-.707-.707V8a6 6 0 00-6-6zm-4 7.414V8a6 6 0 0112 0v1.414l-1.414 1.414a1 1 0 01-.707.293H6.707a1 1 0 01-.707-.293L5 10.414zM10 18a3 3 0 100-6 3 3 0 000 6z" /></svg>Private & Confidential</span>
+                <span className="hidden sm:block">|</span>
+                <span className="flex items-center font-medium text-gray-600">Powered by CreDebtFree.com</span> {/* Added branding */}
+            </div>
+        </div>
+    </div>
+);
+
+
+// --- Main App Component ---
+
+const App = () => {
+    // Global variables & Firebase setup (mostly unchanged)
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+    const firebaseConfig = useMemo(() => { try { return typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {}; } catch (e) { console.error("Bad Firebase Cfg:", e); return {}; } }, []);
+    const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+    const companyBranding = "CreDebtFree.com";
+
+    const [db, setDb] = useState(null);
+    const [auth, setAuth] = useState(null);
+    const [userId, setUserId] = useState(null);
+    const [isAuthReady, setIsAuthReady] = useState(false);
+
+    // Default state with updated timeline/tool defaults
+    const defaultUserData = useMemo(() => ({
+        ficoScore: '', totalDebt: '', monthlyIncome: '', utilization: 75, accountsEnrolling: '', positiveAccounts: '', oldestAccountAge: '', totalCreditLimit: '',
+        programTimeline: '', // Default to empty string for "Select..."
+        securedCard: false, // Default to false
+        creditBuilder: false, // Default to false
+        authorizedUser: false, // Default to false
+        scenarioType: 'pre-enrollment', monthsInProgram: 0, settledAccounts: 0, programPhase: 'accumulation', email: '', firstName: '', phone: ''
+    }), []);
+
+    const [currentStep, setCurrentStep] = useState(1);
+    const [userData, setUserData] = useState(defaultUserData);
+    const [results, setResults] = useState(null);
+    const [error, setError] = useState(null);
+    const [isLoading, setIsLoading] = useState(false);
+
+    const showError = useCallback((message) => { setError(message); setTimeout(() => setError(null), 5000); }, []);
+    const updateUserData = useCallback((data) => { setUserData(prev => ({ ...prev, ...data })); }, []);
+
+    // Firebase Initialization Effect (updated with getApp)
+    useEffect(() => {
+        if (!firebaseConfig || typeof firebaseConfig !== 'object' || Object.keys(firebaseConfig).length === 0) { console.error("Firebase config invalid."); setIsAuthReady(true); setUserId(crypto.randomUUID()); return; }
+        try {
+            const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp(); // Use existing app if available
+            const authInstance = getAuth(app);
+            const dbInstance = getFirestore(app);
+            setLogLevel('debug');
+            setAuth(authInstance); setDb(dbInstance);
+            const unsubscribe = onAuthStateChanged(authInstance, async (user) => { /* ... (auth logic unchanged) ... */
+                let currentUserId;
+                 if (!user) { console.log("No user, attempting sign-in."); try { if (initialAuthToken) { console.log("Using token"); const cred = await signInWithCustomToken(authInstance, initialAuthToken); currentUserId = cred.user.uid; } else { console.log("Using anonymous"); const cred = await signInAnonymously(authInstance); currentUserId = cred.user.uid; } console.log("Sign-in OK:", currentUserId); } catch (e) { console.error("Sign-in Error:", e); currentUserId = crypto.randomUUID(); showError("Auth failed."); } } else { currentUserId = user.uid; console.log("User exists:", currentUserId); } setUserId(currentUserId); setIsAuthReady(true); console.log("Auth ready.");
+             });
+            return () => { console.log("Unsubscribing auth listener."); unsubscribe(); };
+        } catch (e) { console.error("Firebase Init Error:", e); setIsAuthReady(true); setUserId(crypto.randomUUID()); showError("Firebase init failed."); }
+    }, [initialAuthToken, firebaseConfig, showError]);
+
+
+    // --- Core Logic Callbacks (Mostly unchanged, ensure dependencies) ---
+    const calculateWeights = useCallback(/* ... (logic unchanged) ... */(ficoScore, totalDebt, monthlyIncome, positiveAccounts, oldestAccountAge, totalCreditLimit) => { const score = Number(ficoScore) || 500; const debt = Number(totalDebt) || 10000; const income = Number(monthlyIncome) || 3000; const posAccounts = Number(positiveAccounts) || 0; const age = Number(oldestAccountAge) || 2; const limit = Number(totalCreditLimit) || debt * 1.5; const baseWeights = { paymentHistory: 0.35, utilization: 0.30, accountAge: 0.15, creditMix: 0.10, newCredit: 0.10 }; const trueOverallUtilization = limit > 0 ? (debt / limit) : 1; if (score >= 740) { baseWeights.paymentHistory = 0.25; baseWeights.utilization = 0.40; baseWeights.accountAge = 0.20; } else if (score <= 580) { baseWeights.paymentHistory = 0.45; baseWeights.utilization = 0.25; baseWeights.newCredit = 0.15; } const dti = income > 0 ? debt / (income * 12) : 1; if (dti > 0.45) { baseWeights.utilization = Math.min(0.5, baseWeights.utilization + 0.05); baseWeights.paymentHistory = Math.max(0.1, baseWeights.paymentHistory - 0.05); } if (trueOverallUtilization < 0.30) { baseWeights.accountAge = Math.min(0.25, baseWeights.accountAge + 0.05); baseWeights.paymentHistory = Math.max(0.30, baseWeights.paymentHistory - 0.05); } if (posAccounts > 0) { baseWeights.paymentHistory = Math.max(0.30, baseWeights.paymentHistory - 0.05); baseWeights.creditMix = Math.min(0.20, baseWeights.creditMix + 0.05); } if (age < 4) { baseWeights.accountAge = Math.max(0.05, baseWeights.accountAge - 0.05); baseWeights.newCredit = Math.min(0.20, baseWeights.newCredit + 0.05); } else if (age > 10) { baseWeights.accountAge = Math.min(0.25, baseWeights.accountAge + 0.05); } const sum = Object.values(baseWeights).reduce((a, b) => a + b, 0); if (sum === 0) return baseWeights; for (const key in baseWeights) { baseWeights[key] /= sum; } return baseWeights; }, []);
+    const calculateWorstCaseImpact = useCallback(/* ... (logic unchanged) ... */(data, weights) => { const score = Number(data.ficoScore) || 500; const util = Number(data.utilization) || 75; const posAccounts = Number(data.positiveAccounts) || 0; const age = Number(data.oldestAccountAge) || 2; let drop = 0; const utilizationFactor = Math.max(0, (util - 30) / 10); drop += utilizationFactor * 10 * (weights.utilization * 3); const severityFactor = Math.max(0, (700 - score) / 10); drop += severityFactor * 5; drop -= posAccounts * 5; if (age > 10) { drop -= 10; } return Math.min(150, Math.max(20, Math.round(drop))); }, []);
+    const runSimulation = useCallback(/* ... (logic unchanged) ... */(data) => { const initialScore = Number(data.ficoScore); const totalDebt = Number(data.totalDebt); const monthlyIncome = Number(data.monthlyIncome); const positiveAccounts = Number(data.positiveAccounts); const oldestAccountAge = Number(data.oldestAccountAge); const totalCreditLimit = Number(data.totalCreditLimit); const programTimeline = Number(data.programTimeline) || 36; const monthsInProgram = Number(data.monthsInProgram) || 0; if (isNaN(initialScore) || isNaN(totalDebt) || isNaN(monthlyIncome) || isNaN(positiveAccounts) || isNaN(oldestAccountAge) || isNaN(totalCreditLimit)) { throw new Error("Invalid input data."); } const weights = calculateWeights(initialScore, totalDebt, monthlyIncome, positiveAccounts, oldestAccountAge, totalCreditLimit); let lowPointScore, projectedScore; let recoveryMonths = programTimeline; let impactPenalty = 0; if (data.scenarioType === 'pre-enrollment') { impactPenalty = calculateWorstCaseImpact(data, weights); lowPointScore = Math.max(300, initialScore - impactPenalty); } else { lowPointScore = initialScore; recoveryMonths = Math.max(12, programTimeline - monthsInProgram); impactPenalty = 0; } let totalPotentialGain = 0; totalPotentialGain += weights.utilization * 200; totalPotentialGain += weights.paymentHistory * 150 * (recoveryMonths / (programTimeline || 1)); totalPotentialGain += weights.accountAge * 100; let toolGain = 0; if (data.securedCard) toolGain += 30; if (data.creditBuilder) toolGain += 25; if (data.authorizedUser) toolGain += 10; totalPotentialGain += toolGain; projectedScore = Math.min(850, lowPointScore + Math.round(totalPotentialGain)); const postDebt = totalDebt * 0.4; const annualPostDebt = postDebt * 0.05 / 12; const dtiRatio = monthlyIncome > 0 ? (annualPostDebt / monthlyIncome) * 100 : 100; const debtSavings = totalDebt * 0.6; const totalGain = projectedScore - lowPointScore; const stabilizationScore = lowPointScore + Math.round(totalGain * 0.1); const recoveryScore = lowPointScore + Math.round(totalGain * 0.65); return { initialScore, lowPointScore, projectedScore, scoreGain: projectedScore - initialScore, recoveryTime: `${programTimeline} months`, postDTI: Math.min(50, dtiRatio).toFixed(1), savings: debtSavings, impactPenalty, recoveryMonths, weights, milestoneDipScore: lowPointScore, milestoneStabilizationScore: stabilizationScore, milestoneRecoveryScore: recoveryScore }; }, [calculateWeights, calculateWorstCaseImpact]);
+    const saveSimulation = useCallback(/* ... (logic unchanged) ... */async (simulationData, simulationResults) => { if (!db || !userId || !isAuthReady) { console.warn("Cannot save."); showError("Cannot save: No connection."); return; } const userSimulationsPath = `artifacts/${appId}/users/${userId}/simulations`; const simulationRef = collection(db, userSimulationsPath); try { await addDoc(simulationRef, { userId, timestamp: serverTimestamp(), input: simulationData, results: simulationResults }); console.log("Sim saved!"); } catch (e) { console.error("Save Error:", e); showError(`Save failed: ${e.message}`); } }, [db, userId, appId, isAuthReady, showError]);
+
+    // --- Navigation Callbacks ---
+    const calculateAndShowResults = useCallback(() => {
+         console.log("Starting calculation...");
+         setIsLoading(true); setResults(null);
+         setTimeout(() => {
+             try {
+                 const calculatedResults = runSimulation(userData);
+                 setResults(calculatedResults);
+                 saveSimulation(userData, calculatedResults);
+                 setIsLoading(false); setCurrentStep(4);
+                 console.log("Calculation complete, moved to Step 4.");
+             } catch (simError) { console.error("Sim Error:", simError); showError(`Sim Error: ${simError.message}`); setIsLoading(false); }
+         }, 1000); // Reduced delay
+     }, [userData, runSimulation, saveSimulation, showError, setIsLoading, setResults, setCurrentStep]); // Keep dependencies
+
+    const handlePrevious = useCallback(() => { if (currentStep > 1) { setCurrentStep(c => c - 1); setResults(null); } }, [currentStep]);
+    const handleReset = useCallback(() => { setCurrentStep(1); setResults(null); setUserData(defaultUserData); }, [defaultUserData]);
+
+    const handleNext = useCallback(() => {
+        // Validation for Step 1
+        if (currentStep === 1) { /* ... (validation unchanged) ... */
+             if (!userData.scenarioType) { showError("Please select a scenario."); return; } if (userData.scenarioType === 'progress-tracker') { const numMonths = Number(userData.monthsInProgram); const numSettled = Number(userData.settledAccounts); if (isNaN(numMonths) || numMonths < 0) { showError("Invalid months in program."); return; } if (isNaN(numSettled) || numSettled < 0) { showError("Invalid settled accounts."); return; } }
+        }
+        // Validation for Step 2 (includes check for timeline selection)
+        else if (currentStep === 2) {
+            const { ficoScore, totalDebt, accountsEnrolling, positiveAccounts, oldestAccountAge, monthlyIncome, utilization, programTimeline, totalCreditLimit } = userData;
+             const numFico=Number(ficoScore), numIncome=Number(monthlyIncome), numDebt=Number(totalDebt), numLimit=Number(totalCreditLimit), numAccounts=Number(accountsEnrolling), numPositive=Number(positiveAccounts), numAge=Number(oldestAccountAge), numTimeline=Number(programTimeline); // Use Number() consistently
+             if(isNaN(numFico)||numFico<300||numFico>850){showError("Valid FICO Score required (300-850).");return;}
+             if(isNaN(numIncome)||numIncome<=0){showError("Valid Monthly Income required.");return;}
+             if(isNaN(numDebt)||numDebt<=0){showError("Valid Total Debt required.");return;}
+             if(isNaN(numLimit)||numLimit<0){showError("Valid Total Credit Limit required (0+).");return;}
+             if(numLimit>0&&numLimit<numDebt){showError("Credit Limit cannot be less than Debt.");return;}
+             if(isNaN(numAccounts)||numAccounts<1){showError("Min. 1 account to enroll required.");return;}
+             if(isNaN(numPositive)||numPositive<0){showError("Valid Positive Accounts required (0+).");return;}
+             if(isNaN(numAge)||numAge<0){showError("Valid Oldest Account Age required (0+).");return;}
+             if(!utilization){showError("Select Utilization range.");return;}
+             // Check if programTimeline is empty or not a number (valid values are checked by SelectGroup)
+             if(programTimeline === '' || isNaN(numTimeline)){showError("Please select Program Timeline."); return;}
+        }
+
+        // Trigger calculation on Step 3
+        if (currentStep === 3) { calculateAndShowResults(); return; }
+        // Move to next step
+        if (currentStep < 4) { setCurrentStep(c => c + 1); }
+    }, [currentStep, userData, showError, calculateAndShowResults]);
+
+
+    // --- Render Logic ---
+    const renderStep = () => {
+        if (!isAuthReady && !userId) { return ( <div className="max-w-md mx-auto"><div className="bg-white rounded-xl shadow-lg p-8 text-center"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-600 mx-auto mb-4"></div><p className="text-gray-600 font-medium">Initializing...</p></div></div> ); }
+        switch (currentStep) {
+            case 1: return <Step1Scenario userData={userData} updateUserData={updateUserData} />;
+            case 2: return <Step2Profile userData={userData} updateUserData={updateUserData} />;
+             // Pass showError to Step3Tools for the Gemini advice feature
+             case 3: return <Step3Tools userData={userData} updateUserData={updateUserData} showError={showError} />;
+            case 4: return <Step4Results results={results} isLoading={isLoading} userData={userData} onReset={handleReset} setCurrentStep={setCurrentStep} />;
+            default: return <Step1Scenario userData={userData} updateUserData={updateUserData} />;
+        }
+    };
+
+    const steps = useMemo(() => ['Scenario', 'Profile', 'Tools', 'Results'], []);
+    const progressWidth = Math.min(100, Math.max(0, currentStep === 4 ? 100 : ((currentStep - 1) / (steps.length - 1)) * 100));
+
+    // --- JSX ---
+    return (
+        // Adjusted main background, added Inter font from Google Fonts (ensure link is in HTML head if not globally available)
+        <div className="min-h-screen bg-gray-100 font-sans">
+             {/* New Header Style */}
+             <div className="bg-gradient-to-r from-indigo-700 via-purple-700 to-blue-700 shadow-md sticky top-0 z-30">
+                 <div className="max-w-6xl mx-auto px-4 py-3 md:py-4 flex items-center justify-between">
+                     {/* Branding with Logo Placeholder */}
+                     <div className="flex items-center space-x-2">
+                          <span className="w-8 h-8 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-lg flex items-center justify-center shadow">
+                              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                          </span>
+                          <span className="text-white text-lg font-bold">Credit Comeback Sim</span>
+                     </div>
+                     {userId && ( <p className="text-xs text-indigo-100 hidden sm:block"> Session: <span className="font-mono bg-black bg-opacity-10 px-1 py-0.5 rounded">{userId.substring(0, 8)}...</span> </p> )}
+                 </div>
+             </div>
+
+
+            <div className="p-4 md:p-8"> {/* Adjusted padding */}
+                {/* Error Message Display (Improved Styling) */}
+                {error && (
+                    <div className="fixed top-20 right-4 z-50 max-w-sm w-full animate-fade-in-down">
+                         <div className="bg-red-600 text-white p-3 rounded-lg shadow-lg flex items-start space-x-2">
+                             <IconAlert className="h-5 w-5 flex-shrink-0 mt-0.5" />
+                             <p className="text-sm flex-1">{error}</p>
+                             <button onClick={() => setError(null)} className="p-0.5 rounded-full text-red-100 hover:text-white hover:bg-red-700 focus:outline-none"><svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg></button>
+                         </div>
+                    </div>
+                )}
+
+                {/* Progress Bar (Improved Styling) */}
+                {currentStep < 4 && (
+                    <div className="max-w-2xl mx-auto mb-6 bg-white shadow rounded-lg p-4 border border-gray-100">
+                        <div className="relative pt-5">
+                            <div className="overflow-hidden h-1.5 mb-4 text-xs flex rounded bg-gray-200">
+                                <div style={{ width: `${progressWidth}%` }} className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-gradient-to-r from-yellow-400 to-orange-500 transition-all duration-500"></div>
+                            </div>
+                            <div className="flex justify-between -mt-8 text-xs font-medium">
+                                {steps.map((step, index) => (
+                                    <div key={step} className={`w-1/4 flex flex-col items-center text-center ${index + 1 <= currentStep ? 'text-indigo-600' : 'text-gray-400'}`}>
+                                        <div className={`w-6 h-6 rounded-full flex items-center justify-center transition-all duration-300 mb-1 text-xs font-bold ${index + 1 <= currentStep ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-500'}`}>
+                                            {index + 1 < currentStep ? '✓' : index + 1}
+                                        </div>
+                                        <span>{step}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Step Content */}
+                <main className="mt-4">
+                    {renderStep()}
+                </main>
+
+                {/* Navigation Buttons (Improved Styling) */}
+                {currentStep < 4 && isAuthReady && (
+                    <footer className="max-w-3xl mx-auto px-4 mt-8 mb-6"> {/* Matched width of steps */}
+                         <div className="flex justify-between items-center">
+                            <button
+                                onClick={handlePrevious}
+                                disabled={currentStep === 1}
+                                className={`px-5 py-2 text-sm font-medium rounded-md shadow-sm border transition duration-150 ease-in-out ${ currentStep === 1 ? 'bg-gray-100 text-gray-400 cursor-not-allowed border-gray-200' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-indigo-500' }`} >
+                                 Back
+                             </button>
+                             <button
+                                 onClick={handleNext}
+                                 disabled={isLoading}
+                                 className={`px-5 py-2 text-sm font-semibold rounded-md shadow-md hover:shadow-lg transition transform hover:-translate-y-0.5 flex items-center justify-center space-x-1.5 focus:outline-none focus:ring-2 focus:ring-offset-1 ${ isLoading ? 'bg-gray-400 text-white cursor-not-allowed' : 'bg-gradient-to-r from-yellow-400 to-orange-500 text-white focus:ring-orange-400' }`} >
+                                 {isLoading ? ( <><svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><span>Processing...</span></>
+                                 ) : ( <><span>{currentStep === 3 ? 'Calculate Results' : 'Next Step'}</span>{currentStep < 3 && <IconChevronRight className="w-4 h-4"/>}</> )}
+                             </button>
+                        </div>
+                    </footer>
+                )}
+            </div>
+
+            {/* Trust Indicators (Branding added here) */}
+            <TrustIndicators />
+
+             {/* Animation Styles */}
+             <style>{`@keyframes fade-in-down{0%{opacity:0;transform:translateY(-10px)}100%{opacity:1;transform:translateY(0)}}.animate-fade-in-down{animation:fade-in-down 0.5s ease-out forwards}`}</style>
+
+        </div>
+    );
+};
+
+export default App;
+

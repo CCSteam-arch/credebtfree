@@ -1,0 +1,1046 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, addDoc, collection, serverTimestamp, setLogLevel } from 'firebase/firestore'; // Added setLogLevel
+
+// --- SVG Icons ---
+
+const IconUser = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+    </svg>
+);
+
+const IconDollar = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0c-1.657 0-3-.895-3-2s1.343-2 3-2 3-.895 3-2-1.343-2-3-2m0 8c1.11 0 2.08.402 2.599-1M12 8V7m0 1v8m0 0c-1.11 0-2.08.402-2.599-1M12 16V7m0 0v-1m0 10v1m0 0v1m0-1v-1m0-1c-1.11 0-2.08-.402-2.599-1M12 16v-1m0 1v1m0 0v1m0-1v-1m0-1c1.11 0 2.08.402 2.599-1M12 16v-1" />
+    </svg>
+);
+
+const IconCalendar = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+    </svg>
+);
+
+const IconChart = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+    </svg>
+);
+
+const IconCheck = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+    </svg>
+);
+
+const IconChevronRight = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+    </svg>
+);
+
+const IconAlert = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+    </svg>
+);
+
+const IconInfo = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+);
+
+// --- Reusable Form Components ---
+
+const InputGroup = ({ id, label, type = 'number', value, onChange, placeholder, icon, description, min, max }) => (
+    <div className="flex flex-col space-y-2">
+        <label htmlFor={id} className="text-sm font-medium text-gray-700 flex items-center">
+            {label}
+            {description && (
+                <div className="relative group ml-2">
+                    <span className="text-blue-500 cursor-help"><IconInfo /></span>
+                    <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 p-3 bg-gray-800 text-white text-xs rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-10 pointer-events-none">
+                        {description}
+                    </span>
+                </div>
+            )}
+        </label>
+        <div className="relative rounded-xl shadow-sm">
+            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-gray-400">
+                {icon}
+            </div>
+            <input
+                type={type}
+                id={id}
+                name={id}
+                value={value}
+                onChange={onChange}
+                placeholder={placeholder}
+                min={min}
+                max={max}
+                className="block w-full pl-12 pr-4 py-3 border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
+            />
+        </div>
+    </div>
+);
+
+const SelectGroup = ({ id, label, value, onChange, children, description, disabled = false }) => ( // Added disabled prop
+    <div className="flex flex-col space-y-2">
+        <label htmlFor={id} className="text-sm font-medium text-gray-700 flex items-center">
+            {label}
+            {description && (
+                <div className="relative group ml-2">
+                    <span className="text-blue-500 cursor-help"><IconInfo /></span>
+                    <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 p-3 bg-gray-800 text-white text-xs rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-10 pointer-events-none">
+                        {description}
+                    </span>
+                </div>
+            )}
+        </label>
+        <select
+            id={id}
+            name={id}
+            value={value}
+            onChange={onChange}
+            disabled={disabled} // Use disabled prop
+            className={`block w-full pl-4 pr-10 py-3 border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition appearance-none ${disabled ? 'bg-gray-200 cursor-not-allowed' : ''}`} // Style disabled state
+        >
+            {children}
+        </select>
+    </div>
+);
+
+const CheckboxGroup = ({ id, label, checked, onChange, description, points }) => ( // Added points prop
+    <label htmlFor={id} className="flex items-center p-4 bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition cursor-pointer">
+        <input
+            id={id}
+            name={id}
+            type="checkbox"
+            checked={checked}
+            onChange={onChange}
+            className="h-5 w-5 text-blue-600 rounded-md border-gray-300 focus:ring-blue-500"
+        />
+        <div className="ml-4 flex-1">
+            <span className="text-base font-semibold text-gray-800">{label}</span>
+            <p className="text-sm text-gray-500">{description}</p>
+        </div>
+         {points && ( // Conditionally display points
+            <span className="ml-4 text-green-600 font-bold">Est. +{points} pts</span>
+        )}
+    </label>
+);
+
+const RadioGroup = ({ name, value, label, description, checked, onChange }) => (
+    <label className={`flex p-5 rounded-xl border-2 transition ${checked ? 'bg-blue-50 border-blue-500 shadow-lg' : 'bg-white border-gray-200 hover:border-gray-300'}`}>
+        <input
+            type="radio"
+            name={name}
+            value={value}
+            checked={checked}
+            onChange={onChange}
+            className="mt-1 h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300"
+        />
+        <div className="ml-4">
+            <span className="text-lg font-bold text-gray-900">{label}</span>
+            <p className="text-sm text-gray-600 mt-1">{description}</p>
+        </div>
+    </label>
+);
+
+// --- Step Components ---
+
+// NEW STEP 1: SCENARIO
+const Step1Scenario = ({ userData, updateUserData }) => (
+    <div className="max-w-3xl mx-auto px-4">
+        <div className="bg-white rounded-3xl shadow-2xl border border-gray-100 p-8 md:p-12">
+            <h2 className="text-2xl font-bold text-gray-800 mb-2">Step 1: Choose Your Scenario</h2>
+            <p className="text-gray-600 mb-8">Are you just starting or already in the program? This changes the simulation.</p>
+
+            <div className="space-y-6">
+                <RadioGroup
+                    name="scenarioType"
+                    label="Pre-Enrollment"
+                    description="Simulate your *full* journey from today, including the initial credit score dip."
+                    value="pre-enrollment"
+                    checked={userData.scenarioType === 'pre-enrollment'}
+                    onChange={(e) => updateUserData({ scenarioType: e.target.value })}
+                />
+                <RadioGroup
+                    name="scenarioType"
+                    label="Progress Tracker"
+                    description="You're already enrolled. Simulate your *remaining* journey from your current score."
+                    value="progress-tracker"
+                    checked={userData.scenarioType === 'progress-tracker'}
+                    onChange={(e) => updateUserData({ scenarioType: e.target.value })}
+                />
+            </div>
+
+            {userData.scenarioType === 'progress-tracker' && (
+                <div className="mt-8 pt-8 border-t border-gray-200 space-y-6">
+                    <h3 className="text-xl font-semibold text-gray-700">Your Program Progress</h3>
+                    <InputGroup
+                        id="monthsInProgram"
+                        label="Months in Program"
+                        value={userData.monthsInProgram}
+                        onChange={(e) => updateUserData({ monthsInProgram: e.target.value })}
+                        placeholder="e.g., 6"
+                        icon={<IconCalendar />}
+                        description="How many months have you been in the program?"
+                        min="0"
+                    />
+                    <InputGroup
+                        id="settledAccounts"
+                        label="Settled Accounts"
+                        value={userData.settledAccounts}
+                        onChange={(e) => updateUserData({ settledAccounts: e.target.value })}
+                        placeholder="e.g., 2"
+                        icon={<IconCheck />}
+                        description="How many of your enrolled accounts have been successfully settled?"
+                        min="0"
+                    />
+                    <SelectGroup
+                        id="programPhase"
+                        label="Current Program Phase"
+                        value={userData.programPhase}
+                        onChange={(e) => updateUserData({ programPhase: e.target.value })}
+                        description="What is the current status of your program?"
+                    >
+                        <option value="accumulation">Accumulation (Building savings)</option>
+                        <option value="negotiation">Negotiation (Actively settling)</option>
+                        <option value="settled">Settled (All debts resolved)</option>
+                    </SelectGroup>
+                </div>
+            )}
+        </div>
+    </div>
+);
+
+// NEW STEP 2: PROFILE - Added automatic utilization calculation
+const Step2Profile = ({ userData, updateUserData }) => {
+    const [durationAdvice, setDurationAdvice] = useState('Shorter timelines require higher monthly payments, offering a faster comeback.');
+
+    // --- Automatic Utilization Calculation ---
+    useEffect(() => {
+        const debt = parseFloat(userData.totalDebt);
+        const limit = parseFloat(userData.totalCreditLimit);
+
+        if (!isNaN(debt) && !isNaN(limit) && limit > 0) {
+            const calculatedUtil = (debt / limit) * 100;
+            let rangeValue = 100; // Default to max if high
+
+            if (calculatedUtil <= 10) rangeValue = 10;
+            else if (calculatedUtil <= 30) rangeValue = 30;
+            else if (calculatedUtil <= 50) rangeValue = 50;
+            else if (calculatedUtil <= 75) rangeValue = 75;
+            // else rangeValue remains 100
+
+            // Only update if the range has changed
+            if (rangeValue !== userData.utilization) {
+                 updateUserData({ utilization: rangeValue });
+            }
+        }
+    }, [userData.totalDebt, userData.totalCreditLimit, userData.utilization, updateUserData]); // Added dependencies
+
+
+    const handleDurationChange = (e) => {
+        const duration = e.target.value;
+        let advice = 'Shorter timelines require higher monthly payments, offering a faster comeback.';
+        if (duration === '48') advice = 'Our most popular choice: a balanced approach with steady progress and manageable payments.';
+        else if (duration === '60') advice = 'A comfortable pace with lower monthly commitments, ideal for budget-conscious clients.';
+        else if (duration === '72') advice = 'The extended plan, perfect for high balance accounts ($100,000+ total debt) with maximum flexibility.';
+        setDurationAdvice(advice);
+        updateUserData({ programTimeline: parseInt(duration) });
+    };
+
+    return (
+        <div className="max-w-5xl mx-auto px-4">
+            <div className="bg-white rounded-3xl shadow-2xl border border-gray-100 overflow-hidden">
+                {/* Hero Section */}
+                <div className="bg-gradient-to-br from-blue-600 via-indigo-700 to-purple-800 text-white p-10 relative overflow-hidden">
+                    <div className="absolute inset-0 bg-gradient-to-br from-blue-500/20 via-transparent to-purple-500/20"></div>
+                    <div className="relative z-10 flex items-center justify-between">
+                        <div className="text-center sm:text-left">
+                            <h1 className="text-4xl md:text-5xl font-black mb-4 leading-tight">Your Personal <span className="bg-gradient-to-r from-yellow-300 to-orange-400 bg-clip-text text-transparent">Credit Comeback</span> Journey</h1>
+                            <p className="text-blue-100 text-xl font-medium">Every financial transformation starts with understanding your unique profile</p>
+                            <div className="mt-4 flex items-center justify-center sm:justify-start text-blue-200">
+                                <div className="w-2 h-2 bg-green-400 rounded-full mr-2 animate-pulse"></div>
+                                <span className="text-sm font-medium">Powered by AI-Enhanced Credit Algorithms</span>
+                            </div>
+                        </div>
+                        <div className="hidden md:block">
+                            <div className="bg-white bg-opacity-15 backdrop-blur-sm rounded-2xl p-6 border border-white/20">
+                                <div className="w-16 h-16 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-full flex items-center justify-center">
+                                    <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Form Section */}
+                <div className="p-8 md:p-12">
+                    <h2 className="text-2xl font-bold text-gray-800 mb-2">Step 2: Your Financial Snapshot</h2>
+                    <p className="text-gray-600 mb-8">Provide your current details for maximum accuracy.</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
+                        {/* FICO Score */}
+                        <InputGroup id="ficoScore" label="Current FICO Score" value={userData.ficoScore} onChange={(e) => updateUserData({ ficoScore: e.target.value })} placeholder="e.g., 650" icon={<IconChart />} description="Enter your most recent FICO Score (300-850)." min="300" max="850" />
+                        {/* Monthly Income */}
+                        <InputGroup id="monthlyIncome" label="Total Monthly Income" value={userData.monthlyIncome} onChange={(e) => updateUserData({ monthlyIncome: e.target.value })} placeholder="e.g., 5000" icon={<IconDollar />} description="Your total net (after-tax) monthly income." min="0" />
+                        {/* Total Debt */}
+                        <InputGroup id="totalDebt" label="Total Debt for Resolution" value={userData.totalDebt} onChange={(e) => updateUserData({ totalDebt: e.target.value })} placeholder="e.g., 25000" icon={<IconDollar />} description="The total amount of unsecured debt you plan to enroll." min="0" />
+                        {/* Total Credit Limit */}
+                        <InputGroup id="totalCreditLimit" label="Total Credit Limit (All Accounts)" value={userData.totalCreditLimit} onChange={(e) => updateUserData({ totalCreditLimit: e.target.value })} placeholder="e.g., 30000" icon={<IconDollar />} description="The sum of all your credit limits (enrolling and non-enrolling). Used to calculate utilization." min="0" />
+                        {/* Utilization (Now potentially auto-set) */}
+                        <SelectGroup id="utilization" label="Overall Credit Utilization" value={userData.utilization} onChange={(e) => updateUserData({ utilization: parseInt(e.target.value) || 0 })} description="Calculated automatically from Total Debt and Total Credit Limit. Select a range if limit is unknown." disabled={!!(userData.totalDebt && userData.totalCreditLimit)}> {/* Disable if calculated */}
+                            <option value={10}>0% - 10% (Excellent)</option>
+                            <option value={30}>10% - 30% (Good)</option>
+                            <option value={50}>30% - 50% (Fair)</option>
+                            <option value={75}>50% - 75% (Poor)</option>
+                            <option value={100}>75% - 100% (Very Poor)</option>
+                        </SelectGroup>
+                        {/* Accounts Enrolling */}
+                         <InputGroup id="accountsEnrolling" label="Number of Debt Accounts" value={userData.accountsEnrolling} onChange={(e) => updateUserData({ accountsEnrolling: e.target.value })} placeholder="e.g., 4" icon={<IconUser />} description="How many separate accounts are you enrolling?" min="1" />
+                        {/* Positive Accounts */}
+                        <InputGroup id="positiveAccounts" label="Positive Accounts (Not Enrolling)" value={userData.positiveAccounts} onChange={(e) => updateUserData({ positiveAccounts: e.target.value })} placeholder="e.g., 1" icon={<IconCheck />} description="Accounts that will remain open and in good standing." min="0" />
+                        {/* Oldest Account Age */}
+                        <InputGroup id="oldestAccountAge" label="Oldest Account Age (Years)" value={userData.oldestAccountAge} onChange={(e) => updateUserData({ oldestAccountAge: e.target.value })} placeholder="e.g., 7" icon={<IconCalendar />} description="How old is your oldest active credit account, in years?" min="0" />
+                        {/* Program Timeline */}
+                        <div className="md:col-span-2">
+                            <SelectGroup id="programTimeline" label="Expected Program Timeline" value={userData.programTimeline} onChange={handleDurationChange} description="Select the program duration you are considering.">
+                                <option value={24}>24 Months (Aggressive)</option>
+                                <option value={36}>36 Months (Standard)</option>
+                                <option value={48}>48 Months (Balanced)</option>
+                                <option value={60}>60 Months (Comfortable)</option>
+                                <option value={72}>72 Months (Extended)</option>
+                            </SelectGroup>
+                        </div>
+                        <div className="md:col-span-2 mt-2">
+                            <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl flex items-start space-x-3">
+                                <span className="text-blue-500 flex-shrink-0"><IconInfo /></span>
+                                <p className="text-sm text-blue-700">{durationAdvice}</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+
+// STEP 3: TOOLS - Added Review & Recalculate Button
+const Step3Tools = ({ userData, updateUserData, onCalculate }) => ( // Added onCalculate prop
+    <div className="max-w-3xl mx-auto px-4">
+        <div className="bg-white rounded-3xl shadow-2xl border border-gray-100 p-8 md:p-12">
+            <h2 className="text-2xl font-bold text-gray-800 mb-2">Step 3: Supercharge Your Recovery</h2>
+            <p className="text-gray-600 mb-8">Select credit-building tools you plan to use alongside your program. These can significantly speed up your score recovery.</p>
+
+            <div className="space-y-5 mb-10">
+                <CheckboxGroup
+                    id="securedCard"
+                    label="Secured Credit Card"
+                    description="Establishes new positive payment history. Recommended after 6-9 months."
+                    checked={userData.securedCard}
+                    onChange={(e) => updateUserData({ securedCard: e.target.checked })}
+                    points={30} // Added estimated points
+                />
+                <CheckboxGroup
+                    id="creditBuilder"
+                    label="Credit Builder Loan"
+                    description="Adds a new 'installment' account type, improving 'Credit Mix' score."
+                    checked={userData.creditBuilder}
+                    onChange={(e) => updateUserData({ creditBuilder: e.target.checked })}
+                    points={25} // Added estimated points
+                />
+                <CheckboxGroup
+                    id="authorizedUser"
+                    label="Authorized User"
+                    description="Becoming an 'AU' on a trusted person's aged, low-balance card can help."
+                    checked={userData.authorizedUser}
+                    onChange={(e) => updateUserData({ authorizedUser: e.target.checked })}
+                    points={10} // Added estimated points
+                />
+            </div>
+
+            {/* NEW Review & Recalculate Button */}
+            <div className="mb-10">
+                 <button
+                    onClick={onCalculate} // Use the passed-in function
+                    className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-bold py-4 px-6 rounded-lg shadow-lg hover:shadow-xl transition-all text-lg transform hover:-translate-y-0.5"
+                >
+                    Review & Re-Calculate
+                </button>
+            </div>
+
+            <div className="pt-8 border-t border-gray-200">
+                <h3 className="text-xl font-bold text-gray-800 mb-2">Save Your Results</h3>
+                <p className="text-gray-600 mb-6">Enter your details to save this simulation and discuss it with a specialist.</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
+                    <InputGroup
+                        id="firstName"
+                        label="First Name"
+                        type="text"
+                        value={userData.firstName}
+                        onChange={(e) => updateUserData({ firstName: e.target.value })}
+                        placeholder="e.g., Jane"
+                        icon={<IconUser />}
+                    />
+                    <InputGroup
+                        id="phone"
+                        label="Phone Number"
+                        type="tel"
+                        value={userData.phone}
+                        onChange={(e) => updateUserData({ phone: e.target.value })}
+                        placeholder="(555) 123-4567"
+                        icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" /></svg>}
+                    />
+                    <div className="md:col-span-2">
+                        <InputGroup
+                            id="emailCapture"
+                            label="Email Address"
+                            type="email"
+                            value={userData.email}
+                            onChange={(e) => updateUserData({ email: e.target.value })}
+                            placeholder="jane.doe@example.com"
+                            icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>}
+                        />
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+);
+
+
+const LoadingSpinner = () => (
+    <div className="flex flex-col items-center justify-center p-20 text-center">
+        <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+        <h3 className="text-2xl font-bold text-gray-800 mt-8">Calculating Your Comeback...</h3>
+        <p className="text-gray-600 mt-2">Running your custom data through our AI projection model.</p>
+    </div>
+);
+
+// --- UPDATED RecoveryTimeline Component for Step 4 (Generic Milestones) ---
+const RecoveryTimeline = ({ results }) => {
+    if (!results?.timeline || !Array.isArray(results.timeline)) {
+        return <div className="text-red-500 text-center py-4">Timeline data is missing or invalid.</div>;
+    }
+
+    const numProgramTimeline = results.programTimeline || 36;
+    const initialFICO = results.initialScore;
+    const lowestFICO = results.lowestScore;
+
+    const filteredTimeline = [];
+    filteredTimeline.push({ month: 0, score: initialFICO, description: "Program Start - Your current score.", type: 'start' });
+
+    if (results.scenarioType === 'pre-enrollment' && initialFICO - lowestFICO > 10) {
+        const earlyTimeline = results.timeline.slice(0, 7);
+        const dipPoint = earlyTimeline.reduce((min, p) => p.score < min.score ? p : min, earlyTimeline[0]);
+        filteredTimeline.push({ month: dipPoint.month, score: dipPoint.score, description: `Initial Impact - Expected temporary dip.`, type: 'dip' });
+    }
+
+    for (let m = 6; m < numProgramTimeline; m += 6) {
+        const closestPoint = results.timeline.reduce((prev, curr) => Math.abs(curr.month - m) < Math.abs(prev.month - m) ? curr : prev);
+         if (!filteredTimeline.some(p => p.month === closestPoint.month)) {
+            filteredTimeline.push({ month: closestPoint.month, score: closestPoint.score, description: `Progress Check - Steady recovery continues.`, type: 'progress' });
+        }
+    }
+
+    const finalPoint = results.timeline.find(p => p.month === numProgramTimeline);
+    if (finalPoint && !filteredTimeline.some(p => p.month === numProgramTimeline)) {
+        filteredTimeline.push({ month: finalPoint.month, score: finalPoint.score, description: "Program Completion - Achieved target score!", type: 'end' });
+    }
+
+    const uniqueSortedTimeline = Array.from(new Set(filteredTimeline.map(JSON.stringify))).map(JSON.parse).sort((a, b) => a.month - b.month);
+
+    return (
+        <div className="bg-gradient-to-br from-blue-50 to-indigo-100 rounded-xl p-6 md:p-8 border border-blue-200">
+            <h3 className="text-2xl font-bold text-gray-800 mb-6 flex items-center">
+                <svg className="w-6 h-6 text-blue-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                Your Credit Recovery Journey
+            </h3>
+            <div className="relative pl-12">
+                <div className="absolute left-10 top-0 bottom-0 w-1 bg-gradient-to-b from-blue-500 via-indigo-500 to-purple-500 rounded-full"></div>
+                <div className="space-y-8">
+                    {uniqueSortedTimeline.map((event, index) => {
+                        let dotColorClass = 'bg-gray-400'; let borderColorClass = 'border-gray-400'; let textColorClass = 'text-gray-700';
+                        switch (event.type) {
+                            case 'start': dotColorClass = 'bg-blue-600'; borderColorClass = 'border-blue-600'; textColorClass = 'text-blue-700'; break;
+                            case 'dip': dotColorClass = 'bg-red-500'; borderColorClass = 'border-red-500'; textColorClass = 'text-red-700'; break;
+                            case 'progress': dotColorClass = 'bg-indigo-500'; borderColorClass = 'border-indigo-500'; textColorClass = 'text-indigo-700'; break;
+                            case 'end': dotColorClass = 'bg-green-600'; borderColorClass = 'border-green-600'; textColorClass = 'text-green-700'; break;
+                            default: break;
+                        }
+                        return (
+                            <div key={`${event.month}-${index}`} className="flex items-start relative">
+                                <div className={`w-6 h-6 ${dotColorClass} rounded-full flex-shrink-0 absolute left-7 top-1/2 transform -translate-x-1/2 -translate-y-1/2 shadow-lg z-10`}></div>
+                                <div className="ml-8 flex-1 pl-4">
+                                    <div className={`rounded-xl p-4 shadow-md border-l-4 ${borderColorClass} bg-white`}>
+                                        <div className="flex justify-between items-start">
+                                            <div>
+                                                <h4 className={`font-bold ${textColorClass}`}>{event.description}</h4>
+                                                <p className="text-gray-600 text-sm mt-1">{event.month === 0 ? 'Start' : event.month === numProgramTimeline ? `Month ${event.month} (Finish)` : `Month ${event.month}`}</p>
+                                            </div>
+                                            <div className="text-right flex-shrink-0 ml-4">
+                                                <div className={`text-xl font-bold ${textColorClass}`}>{event.score}</div>
+                                                <div className="text-xs text-gray-500">FICO</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// --- NEW Component for Score Recovery Factors ---
+const ScoreRecoveryFactors = ({ confidenceLevel, metadata, positiveAccounts, oldestAccountAge }) => ( // Added props
+    <div className="p-6 bg-gradient-to-br from-indigo-50 to-purple-100 rounded-2xl shadow-lg border border-indigo-200 mt-8">
+        <h3 className="text-xl font-bold text-gray-900 mb-4">Score Recovery Factors</h3>
+        <p className="text-sm text-gray-700 mb-4">
+            This simulator estimates your credit score impact based on a multi-factor model considering debt, utilization, payment history, and more.
+            The model adapts based on your provided credit profile details.
+        </p>
+        <ul className="space-y-2 text-sm text-gray-800 list-disc list-inside mb-4">
+            <li><strong>Debt Reduction:</strong> Lowering balances significantly improves credit utilization, a major score factor.</li>
+            <li><strong>Payment History:</strong> Consistent, on-time payments on any remaining accounts are crucial during recovery.</li>
+            <li><strong>Credit Mix & Age:</strong> Maintaining positive accounts ({positiveAccounts || 'your'}) and allowing them to age ({oldestAccountAge || 'your oldest'} years) adds stability.</li> {/* Display user data */}
+            <li><strong>New Credit:</strong> Limiting new credit applications prevents unnecessary score dips during recovery.</li>
+        </ul>
+        <div className="bg-white border-l-4 border-purple-400 p-4 rounded-r-lg shadow-inner">
+             <h4 className="font-semibold text-purple-800">Model Confidence: {confidenceLevel}%</h4>
+             <p className="text-xs text-gray-600 mt-1">
+                 Our AI estimates a typical variance of <strong>{metadata?.accuracy || '±20 points'}</strong> based on historical data for similar profiles.
+                 Higher confidence reflects profiles with stronger positive factors (more good accounts, longer credit history).
+             </p>
+        </div>
+        <p className="text-xs text-gray-500 mt-4 text-center">
+            Estimates based on typical outcomes. Individual results vary. This is an educational tool and not financial advice.
+        </p>
+    </div>
+);
+
+
+// Main Results Component (Step 4) - UPDATED with interactive confidence
+const Step4Results = ({ results, isLoading, userData, onReset, setCurrentStep }) => {
+    // NEW State for confidence tooltip visibility
+    const [showConfidenceInfo, setShowConfidenceInfo] = useState(false);
+
+    if (isLoading) {
+        return (
+            <div className="max-w-3xl mx-auto px-4"><div className="bg-white rounded-3xl shadow-2xl border border-gray-100 p-8 md:p-12"><LoadingSpinner /></div></div>
+        );
+    }
+    if (!results || typeof results.projectedScore === 'undefined') {
+        return (
+            <div className="max-w-3xl mx-auto px-4 text-center"><div className="bg-white rounded-3xl shadow-2xl border border-gray-100 p-8 md:p-12">
+                <h2 className="text-2xl font-bold text-red-600 mb-4">Calculation Error</h2>
+                <p className="text-gray-600 mb-6">Something went wrong calculating results. Please try again.</p>
+                <button onClick={onReset} className="px-8 py-3 bg-blue-600 text-white font-bold rounded-xl shadow-lg hover:bg-blue-700 transition transform hover:-translate-y-0.5">Start Over</button>
+            </div></div>
+        );
+    }
+
+    const { initialScore, lowestScore, projectedScore, totalImprovement, timeline, confidenceLevel, metadata } = results;
+    const estimatedSavings = (Number(userData.totalDebt) * 0.55).toLocaleString();
+    const companyBranding = "CreDebtFree.com";
+
+    // Enhanced confidence explanation using user data
+    const confidenceExplanation = `
+        A ${confidenceLevel}% confidence level means that based on historical data for users with similar profiles
+        (like having ${userData.positiveAccounts || '0'} positive accounts and an oldest account age of ${userData.oldestAccountAge || 'unknown'} years),
+        the final score typically falls within a range of ${metadata?.accuracy || '±20 points'} around the projection (${projectedScore}).
+        Factors like consistent payments on remaining accounts and avoiding new debt during the program significantly influence actual results.
+    `;
+
+
+    return (
+        <div className="max-w-6xl mx-auto px-4">
+            <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-2xl p-8 mb-8 text-white shadow-xl">
+                 <div className="flex flex-col sm:flex-row items-center justify-between">
+                    <div className="text-center sm:text-left mb-4 sm:mb-0">
+                        <h2 className="text-2xl font-bold mb-2">Your Personalized Credit Projection</h2>
+                        <div className="flex items-center justify-center sm:justify-start space-x-4 text-sm text-blue-100">
+                            <span className="flex items-center"><IconCheck /> Powered by {companyBranding}</span>
+                            <span className="flex items-center"><IconChart /> {results.algorithmType || 'Advanced Model'}</span>
+                        </div>
+                    </div>
+                    <div className="text-center sm:text-right">
+                        <div className="text-3xl font-bold">{initialScore} → {projectedScore}</div>
+                        <div className="text-blue-100">FICO Score Journey</div>
+                    </div>
+                </div>
+            </div>
+
+            <div className="p-8 bg-white rounded-2xl shadow-xl border border-gray-100">
+                <h3 className="text-xl font-bold text-gray-900 mb-6 border-b pb-3">Key Projections</h3>
+                <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                     <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-6 border border-green-200">
+                        <h3 className="text-sm font-semibold text-gray-600">Total Score Gain</h3>
+                        <div className="text-3xl font-bold text-green-600 mt-1">+{totalImprovement} pts</div>
+                        <p className="text-xs text-gray-500 mt-1">From lowest point ({lowestScore})</p>
+                    </div>
+                    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-200">
+                        <h3 className="text-sm font-semibold text-gray-600">Recovery Time</h3>
+                         <div className="text-3xl font-bold text-blue-600 mt-1">{userData.programTimeline} mo</div>
+                    </div>
+                     {/* UPDATED Confidence Level Box */}
+                     <div
+                        className="bg-gradient-to-br from-purple-50 to-violet-50 rounded-xl p-6 border border-purple-200 relative cursor-pointer"
+                        onMouseEnter={() => setShowConfidenceInfo(true)}
+                        onMouseLeave={() => setShowConfidenceInfo(false)}
+                        onClick={() => setShowConfidenceInfo(!showConfidenceInfo)} // Toggle on click
+                    >
+                        <h3 className="text-sm font-semibold text-gray-600">Confidence Level</h3>
+                        <div className="text-3xl font-bold text-purple-600 mt-1">{confidenceLevel}%</div>
+                         {/* Conditionally rendered Tooltip */}
+                         {showConfidenceInfo && (
+                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 p-3 bg-gray-800 text-white text-xs rounded-lg shadow-lg transition-opacity z-10 opacity-100"> {/* Always visible when state is true */}
+                                {confidenceExplanation}
+                                <svg className="absolute text-gray-800 h-2 w-full left-0 top-full" x="0px" y="0px" viewBox="0 0 255 255"><polygon className="fill-current" points="0,0 127.5,127.5 255,0"/></svg>
+                            </div>
+                         )}
+                         {/* Small info icon to indicate interactivity */}
+                         <div className="absolute top-2 right-2 text-purple-400">
+                             <IconInfo />
+                         </div>
+                    </div>
+                    <div className="bg-gradient-to-br from-orange-50 to-amber-50 rounded-xl p-6 border border-orange-200">
+                        <h3 className="text-sm font-semibold text-gray-600">Est. Savings</h3>
+                        <div className="text-3xl font-bold text-orange-600 mt-1">${estimatedSavings}</div>
+                         <p className="text-xs text-gray-500 mt-1">(~55% of debt)</p>
+                    </div>
+                </div>
+
+                 {/* Score Recovery Factors Section - passing user data */}
+                <ScoreRecoveryFactors
+                    confidenceLevel={confidenceLevel}
+                    metadata={metadata}
+                    positiveAccounts={userData.positiveAccounts}
+                    oldestAccountAge={userData.oldestAccountAge}
+                />
+
+                <div className="flex flex-col sm:flex-row gap-4 justify-center mt-6">
+                    <button onClick={onReset} className="w-full sm:w-auto border-2 border-gray-300 text-gray-700 px-8 py-3 rounded-lg font-semibold hover:border-gray-400 hover:bg-gray-50 transition-all duration-200">Run New Simulation</button>
+                    {/* Simplified save button */}
+                    <button onClick={() => alert("Save functionality would require backend integration.")} className="w-full sm:w-auto bg-gradient-to-r from-blue-600 to-indigo-700 text-white font-black rounded-xl shadow-lg hover:shadow-xl transition transform hover:-translate-y-0.5">Save & Get Full Report</button>
+                </div>
+            </div>
+
+            <div className="mt-8">
+                <RecoveryTimeline results={results} userData={userData} />
+            </div>
+
+            {/* UPDATED Metadata Font Color */}
+            <div className="mt-8 text-center text-xs text-white"> {/* Changed text color */}
+                <p>{metadata?.methodology || ''}</p>
+                <p>{metadata?.disclaimer || ''}</p>
+             </div>
+        </div>
+    );
+};
+// --- Trust & Security Component ---
+const TrustIndicators = () => (
+    <div className="bg-gray-50 border-t border-gray-200 py-8">
+        <div className="max-w-4xl mx-auto px-4">
+            <div className="flex flex-wrap items-center justify-center space-x-8 text-sm text-gray-600">
+                <div className="flex items-center mb-2 sm:mb-0"> <svg className="w-5 h-5 text-green-500 mr-2" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" /></svg>SSL Secured</div>
+                <div className="flex items-center mb-2 sm:mb-0"><svg className="w-5 h-5 text-blue-500 mr-2" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg>Data Encrypted</div>
+                <div className="flex items-center"><svg className="w-5 h-5 text-indigo-500 mr-2" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707l-.707-.707V8a6 6 0 00-6-6zm-4 7.414V8a6 6 0 0112 0v1.414l-1.414 1.414a1 1 0 01-.707.293H6.707a1 1 0 01-.707-.293L5 10.414zM10 18a3 3 0 100-6 3 3 0 000 6z" /></svg>Private & Confidential</div>
+            </div>
+        </div>
+    </div>
+);
+
+// --- Main App Component ---
+
+const App = () => {
+    // Global variables for Firebase setup
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+    const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+    const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+    const companyBranding = "CreDebtFree.com";
+
+    // Firebase State Management
+    const [db, setDb] = useState(null);
+    const [auth, setAuth] = useState(null);
+    const [userId, setUserId] = useState(null);
+    const [isAuthReady, setIsAuthReady] = useState(false);
+
+    // Default state - Checkboxes are now false
+    const defaultUserData = {
+        ficoScore: '', totalDebt: '', monthlyIncome: '', utilization: 75, accountsEnrolling: '',
+        positiveAccounts: '', oldestAccountAge: '', totalCreditLimit: '', programTimeline: 36,
+        securedCard: false, creditBuilder: false, authorizedUser: false, scenarioType: 'pre-enrollment',
+        monthsInProgram: 0, settledAccounts: 0, programPhase: 'accumulation',
+        email: '', firstName: '', phone: ''
+    };
+
+    // Application State
+    const [currentStep, setCurrentStep] = useState(1);
+    const [userData, setUserData] = useState(defaultUserData);
+    const [results, setResults] = useState(null);
+    const [error, setError] = useState(null);
+    const [isLoading, setIsLoading] = useState(false);
+
+    // Firebase initialization effect
+    useEffect(() => {
+        if (!firebaseConfig || !Object.keys(firebaseConfig).length) {
+            console.error("Firebase configuration is missing or empty.");
+            setIsAuthReady(true); setUserId(crypto.randomUUID()); return;
+        }
+        try {
+            const app = initializeApp(firebaseConfig);
+            const authInstance = getAuth(app);
+            const dbInstance = getFirestore(app);
+            setLogLevel('debug'); // Enable detailed logging
+            setAuth(authInstance); setDb(dbInstance);
+            const unsubscribe = onAuthStateChanged(authInstance, async (user) => {
+                let currentUserId;
+                if (!user) {
+                    try {
+                        const cred = initialAuthToken ? await signInWithCustomToken(authInstance, initialAuthToken) : await signInAnonymously(authInstance);
+                        currentUserId = cred.user.uid;
+                    } catch (e) { console.error("Firebase Sign-in Error:", e); currentUserId = crypto.randomUUID(); }
+                } else { currentUserId = user.uid; }
+                setUserId(currentUserId); setIsAuthReady(true); console.log("Auth ready, User ID:", currentUserId);
+            });
+            return () => unsubscribe();
+        } catch (e) { console.error("Firebase Initialization Error:", e); setIsAuthReady(true); setUserId(crypto.randomUUID()); }
+    }, [initialAuthToken, JSON.stringify(firebaseConfig)]);
+
+    // Utility functions
+    const showError = (message) => { setError(message); setTimeout(() => setError(null), 5000); };
+    const updateUserData = useCallback((data) => { setUserData(prev => ({ ...prev, ...data })); }, []);
+
+    // --- NEW SIMULATION LOGIC ---
+
+    const calculateRealisticInitialImpact = useCallback((data) => {
+        const { ficoScore, totalDebt, monthlyIncome, accountsEnrolling, positiveAccounts, totalCreditLimit, oldestAccountAge } = data;
+        const currentFICO = Number(ficoScore) || 500;
+        const numTotalDebt = Number(totalDebt) || 10000;
+        const numMonthlyIncome = Number(monthlyIncome) || 3000;
+        const numDebtAccounts = Number(accountsEnrolling) || 1;
+        const numPositiveAccounts = Number(positiveAccounts) || 0;
+        const numCreditLimit = Number(totalCreditLimit) || numTotalDebt * 1.5;
+        const numOldestAccountAge = Number(oldestAccountAge) || 0;
+
+        const dtiRatio = numMonthlyIncome > 0 ? numTotalDebt / (numMonthlyIncome * 12) : 1;
+        const utilizationRate = numCreditLimit > 0 ? numTotalDebt / numCreditLimit : 1;
+        const scoreMultiplier = currentFICO > 700 ? 1.3 : currentFICO > 650 ? 1.0 : 0.8;
+        const accountProtection = Math.min(numPositiveAccounts * 8, 35);
+
+        let baseDrop = (dtiRatio * 25) + (numDebtAccounts * 8) + (utilizationRate * 40);
+        baseDrop *= scoreMultiplier;
+        baseDrop = Math.max(baseDrop - accountProtection, 15);
+
+        return Math.min(baseDrop, Math.min(currentFICO * 0.15, 85));
+    }, []);
+
+    const calculateSettlementBoost = useCallback((accountNumber, totalAccounts, totalDebt) => {
+        const progressMultiplier = 1 + (accountNumber / totalAccounts) * 0.5;
+        const baseBoost = 12 + (Math.log(Number(totalDebt) / 1000 || 1) * 2);
+        return Math.round(baseBoost * progressMultiplier);
+    }, []);
+
+
+     const defineRecoveryPhases = useCallback((data, initialImpact) => {
+        const { programTimeline, accountsEnrolling, ficoScore, scenarioType, monthsInProgram, settledAccounts } = data;
+        const numProgramTimeline = Number(programTimeline) || 36;
+        const numDebtAccounts = Number(accountsEnrolling) || 1;
+        let currentFICO = Number(ficoScore) || 500;
+        const numMonthsInProgram = Number(monthsInProgram) || 0;
+        const numSettledAccounts = Number(settledAccounts) || 0;
+
+        const milestones = [];
+        const totalDebt = Number(data.totalDebt) || 10000;
+        const settlementStartingMonth = (scenarioType === 'progress-tracker' && numMonthsInProgram > 0) ? numMonthsInProgram + 1 : 6;
+
+        for (let i = numSettledAccounts + 1; i <= numDebtAccounts; i++) {
+            const settlementStartMonth = settlementStartingMonth;
+            const settlementEndMonth = Math.max(numProgramTimeline - 6, settlementStartMonth + (numDebtAccounts - numSettledAccounts));
+            const settlementMonth = settlementStartMonth + ((i - numSettledAccounts) * (settlementEndMonth - settlementStartMonth) / (numDebtAccounts - numSettledAccounts + 1));
+            const scoreBoost = calculateSettlementBoost(i, numDebtAccounts, totalDebt);
+            milestones.push({
+                month: Math.round(settlementMonth),
+                boost: scoreBoost,
+                description: `Account ${i} settled`, // This description is now internal, not shown directly
+            });
+        }
+
+        return {
+            dip: { name: 'dip', duration: 3, startScore: currentFICO, endScore: currentFICO - initialImpact, description: "Enrollment impact" },
+            stabilization: { name: 'stabilization', duration: 6, recovery: initialImpact * 0.1, description: "Score stabilizes" },
+            earlyRecovery: { name: 'earlyRecovery', duration: Math.min(9, numProgramTimeline * 0.4), recovery: initialImpact * 0.35, milestones: milestones.filter(m => m.month > 0 && m.month <= 18), description: "First settlements" },
+            acceleration: { name: 'acceleration', duration: Math.max(numProgramTimeline - 18, 0), recovery: initialImpact * 0.65, bonus: 0 , milestones: milestones.filter(m => m.month > 18), description: "Momentum builds" }
+        };
+    }, [calculateSettlementBoost]);
+
+    const runEnhancedSimulation = useCallback((data) => {
+        const currentFICO = Number(data.ficoScore) || 500;
+        const numProgramTimeline = Number(data.programTimeline) || 36;
+        const scenarioType = data.scenarioType;
+        const initialImpact = calculateRealisticInitialImpact(data);
+        const phases = defineRecoveryPhases(data, initialImpact);
+        const timeline = [];
+        let currentScore = currentFICO;
+
+        const getCurrentPhase = (month) => {
+            if (scenarioType === 'pre-enrollment' && month <= phases.dip.duration) return phases.dip;
+            if (month <= phases.dip.duration + phases.stabilization.duration) return phases.stabilization;
+            if (month <= phases.dip.duration + phases.stabilization.duration + phases.earlyRecovery.duration) return phases.earlyRecovery;
+            return phases.acceleration;
+        };
+
+        const calculateMonthlyChange = (month, currentPhase) => {
+            let change = 0;
+            if (scenarioType === 'pre-enrollment' && currentPhase.name === 'dip' && month <= currentPhase.duration) {
+                change = -initialImpact / currentPhase.duration;
+            } else if (currentPhase.duration > 0) {
+                 if (currentPhase.name !== 'dip') { change = (currentPhase.recovery || 0) / currentPhase.duration; }
+                 if (currentPhase.name === 'acceleration') { change += (currentPhase.bonus || 0) / currentPhase.duration; }
+            }
+             // Add tool boost only if the tool is selected
+            let toolBoostMonthly = 0;
+            if(data.securedCard) toolBoostMonthly += (30 / numProgramTimeline); // Distribute boost over timeline
+            if(data.creditBuilder) toolBoostMonthly += (25 / numProgramTimeline);
+            if(data.authorizedUser) toolBoostMonthly += (10 / numProgramTimeline);
+            change += toolBoostMonthly;
+
+            return change;
+        };
+
+        for (let month = 0; month <= numProgramTimeline; month++) {
+            const phase = getCurrentPhase(month);
+            let scoreChange = calculateMonthlyChange(month, phase);
+            const settlementBoosts = [...(phases.earlyRecovery.milestones || []), ...(phases.acceleration.milestones || [])]
+                                        .filter(m => m.month === month)
+                                        .reduce((sum, m) => sum + m.boost, 0);
+            scoreChange += settlementBoosts;
+            currentScore += scoreChange;
+            timeline.push({ month, score: Math.round(Math.max(currentScore, 300)), phase: phase.name, change: scoreChange, description: phase.description });
+        }
+
+        let confidence = 70;
+        if ((Number(data.positiveAccounts) || 0) > 2) confidence += 10;
+        if ((Number(data.oldestAccountAge) || 0) > 5) confidence += 10;
+        if (currentFICO > 600) confidence += 5;
+        const monthlyIncome = Number(data.monthlyIncome) || 3000;
+        const totalDebt = Number(data.totalDebt) || 10000;
+        if (totalDebt < monthlyIncome * 5) confidence += 5;
+        confidence = Math.min(confidence, 90);
+
+        const lowestScorePoint = timeline.reduce((min, p) => p.score < min.score ? p : min, timeline[0]);
+        const finalScorePoint = timeline[timeline.length - 1];
+
+        // Combine all milestones for metadata (internal use for timeline generation)
+        const allKeyMilestones = [
+            ...(phases.earlyRecovery.milestones || []),
+            ...(phases.acceleration.milestones || [])
+        ];
+
+        return {
+            algorithmType: 'Enhanced Hybrid (Phased)',
+            initialScore: currentFICO,
+            lowestScore: lowestScorePoint.score,
+            projectedScore: finalScorePoint.score,
+            totalImprovement: finalScorePoint.score - lowestScorePoint.score,
+            timeline: timeline,
+            programTimeline: numProgramTimeline,
+            confidenceLevel: confidence,
+            metadata: {
+                methodology: 'Phase-based recovery simulation',
+                disclaimer: 'Estimates based on typical outcomes. Individual results vary.',
+                accuracy: '±15-25 points',
+                milestones: allKeyMilestones // Internal milestones
+            },
+            scenarioType: scenarioType,
+            impactPenalty: Math.round(initialImpact),
+            savings: Number(data.totalDebt) * 0.55
+        };
+    }, [calculateRealisticInitialImpact, defineRecoveryPhases]);
+
+
+    const saveSimulation = useCallback(async (simulationData, simulationResults) => {
+         if (!db || !userId || !isAuthReady) {
+            console.warn("Save failed: DB not ready or user not authenticated.");
+            showError("Could not save results. DB not connected.");
+            return;
+        }
+        const simulationRef = collection(db, 'artifacts', appId, 'users', userId, 'simulations');
+        try {
+            await addDoc(simulationRef, {
+                userId: userId, timestamp: serverTimestamp(),
+                input: simulationData, results: simulationResults,
+            });
+            console.log("Simulation saved successfully!");
+            showError("Results Saved Successfully!");
+        } catch (e) {
+            console.error("Error adding document: ", e);
+            showError("Save Failed: Database error.");
+        }
+    }, [db, userId, isAuthReady, appId]);
+
+    // --- Navigation ---
+    const handlePrevious = () => { if (currentStep > 1) { setCurrentStep(currentStep - 1); setResults(null); } };
+    const handleReset = () => { setCurrentStep(1); setResults(null); setUserData(defaultUserData); };
+
+    const handleNext = () => {
+        if (currentStep === 1) {
+             if (!userData.scenarioType) { showError("Please select a scenario."); return; }
+             if (userData.scenarioType === 'progress-tracker') {
+                 const numMonths = parseInt(String(userData.monthsInProgram || '0'));
+                 const numSettled = parseInt(String(userData.settledAccounts || '0'));
+                 if (isNaN(numMonths) || numMonths < 0) { showError("Invalid months in program."); return; }
+                 if (isNaN(numSettled) || numSettled < 0) { showError("Invalid settled accounts."); return; }
+             }
+        } else if (currentStep === 2) {
+            const { ficoScore, totalDebt, accountsEnrolling, positiveAccounts, oldestAccountAge, monthlyIncome, utilization, programTimeline, totalCreditLimit } = userData;
+            const numFico = parseFloat(String(ficoScore)); const numIncome = parseFloat(String(monthlyIncome));
+            const numDebt = parseFloat(String(totalDebt)); const numLimit = parseFloat(String(totalCreditLimit));
+            const numAccounts = parseInt(String(accountsEnrolling)); const numPositive = parseInt(String(positiveAccounts));
+            const numAge = parseInt(String(oldestAccountAge));
+            if (isNaN(numFico) || numFico < 300 || numFico > 850) { showError("Invalid FICO Score (300-850)."); return; }
+            if (isNaN(numIncome) || numIncome <= 0) { showError("Invalid Monthly Income."); return; }
+            if (isNaN(numDebt) || numDebt <= 0) { showError("Invalid Total Debt."); return; }
+            if (isNaN(numLimit) || numLimit < 0) { showError("Invalid Total Credit Limit."); return; }
+            if (isNaN(numAccounts) || numAccounts < 1) { showError("Invalid # Accounts Enrolling (min 1)."); return; }
+            if (isNaN(numPositive) || numPositive < 0) { showError("Invalid # Positive Accounts (min 0)."); return; }
+            if (isNaN(numAge) || numAge < 0) { showError("Invalid Oldest Account Age (min 0)."); return; }
+            if (!utilization) { showError("Please select Credit Utilization."); return; }
+            if (isNaN(programTimeline)) { showError("Please select Program Timeline."); return; }
+        } else if (currentStep === 3) {
+            if (userData.email && !/\S+@\S+\.\S+/.test(userData.email)) { showError("Please enter a valid email address."); return; }
+            calculateAndShowResults(); return;
+        }
+
+        if (currentStep < 4) { setCurrentStep(currentStep + 1); }
+    };
+
+    // Renamed to match the button text/action
+    const handleCalculate = () => {
+         // Perform validation before calculating
+         if (currentStep !== 3) return; // Only relevant on step 3
+
+         // Basic email validation from handleNext
+         if (userData.email && !/\S+@\S+\.\S+/.test(userData.email)) {
+             showError("Please enter a valid email address before calculating.");
+             return;
+         }
+         // Call the existing function that does the calculation and moves to step 4
+         calculateAndShowResults();
+    }
+
+    const calculateAndShowResults = () => {
+        setIsLoading(true); setResults(null);
+        if (!isAuthReady) { console.warn("Auth not ready, delaying save..."); }
+        setTimeout(() => {
+            try {
+                const calculatedResults = runEnhancedSimulation(userData);
+                setResults(calculatedResults);
+                if (isAuthReady && db && calculatedResults) {
+                     saveSimulation(userData, calculatedResults);
+                }
+            } catch (simError) { console.error("Simulation Error:", simError); showError("Calculation error. Check inputs."); }
+            finally { setIsLoading(false); setCurrentStep(4); }
+        }, 1500);
+    };
+
+    // --- Render Logic ---
+    const renderStep = () => {
+        if (!isAuthReady) {
+            return (<div className="max-w-4xl mx-auto px-4"><div className="bg-white rounded-2xl shadow-2xl p-8 text-center border border-gray-100">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                <p className="text-gray-700 font-semibold">Initializing Credit Hub...</p>
+                <p className="text-sm text-gray-500 mt-2">Securing session...</p>
+                <p className="text-xs text-gray-400 mt-4">Session ID: {userId || 'Authenticating...'}</p>
+            </div></div>);
+        }
+        switch (currentStep) {
+            case 1: return <Step1Scenario userData={userData} updateUserData={updateUserData} />;
+            case 2: return <Step2Profile userData={userData} updateUserData={updateUserData} />;
+            // Pass the handleCalculate function to Step3Tools
+            case 3: return <Step3Tools userData={userData} updateUserData={updateUserData} onCalculate={handleCalculate} />;
+            case 4: return <Step4Results results={results} isLoading={isLoading} userData={userData} onReset={handleReset} setCurrentStep={setCurrentStep} />;
+            default: return <Step1Scenario userData={userData} updateUserData={updateUserData} />;
+        }
+    };
+    const steps = ['Scenario', 'Profile', 'Tools', 'Results'];
+    const progressWidth = currentStep === 4 ? 100 : ((currentStep - 1) / (steps.length - 1)) * 100;
+
+    return (
+        <div className="min-h-screen bg-gradient-to-br from-blue-600 via-purple-600 to-indigo-600 font-inter">
+            <div className="bg-white shadow-md border-b border-gray-100 sticky top-0 z-30">
+                <div className="max-w-6xl mx-auto px-4 py-4 md:py-6">
+                    <h1 className="text-2xl md:text-4xl font-bold text-center text-gray-900 mb-1">Credit Comeback Simulator</h1>
+                    <p className="text-base md:text-lg text-gray-600 text-center">Personalized recovery with AI accuracy</p>
+                    {isAuthReady && userId && (<p className="text-sm text-gray-400 text-center mt-2">Session ID: <span className="font-mono text-xs bg-gray-100 px-2 py-1 rounded-md">{userId}</span></p>)}
+                </div>
+            </div>
+            <div className="p-4 md:p-10">
+                {error && (<div className="fixed top-20 right-5 z-50 max-w-sm w-full"><div className="bg-red-600 text-white p-4 rounded-xl shadow-2xl flex items-start space-x-3">
+                    <span className="flex-shrink-0"><IconAlert /></span>
+                    <div><h4 className="font-bold">An error occurred</h4><p className="text-sm">{error}</p></div>
+                    <button onClick={() => setError(null)} className="ml-auto text-red-100 hover:text-white">&times;</button>
+                </div></div>)}
+                {/* UPDATED Progress Bar Styling */}
+                {currentStep < 4 && (<div className="max-w-3xl mx-auto mb-8 bg-white/80 backdrop-blur-sm p-4 rounded-xl shadow-lg border border-gray-200"> {/* Changed background */}
+                    <h2 className="sr-only">Progress</h2><div className="relative"><div className="absolute left-0 top-1/2 -translate-y-1/2 w-full h-2 bg-gray-200 rounded-full"></div> {/* Light gray background */}
+                    <div className="absolute left-0 top-1/2 -translate-y-1/2 h-2 bg-gradient-to-r from-purple-500 to-blue-500 rounded-full transition-all duration-500" style={{ width: `${progressWidth}%` }}></div> {/* Gradient fill */}
+                    <div className="relative flex justify-between">{steps.map((step, index) => (<div key={step} className="flex flex-col items-center">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300 ${index + 1 <= currentStep ? 'bg-gradient-to-br from-purple-500 to-blue-500 text-white shadow-md' : 'bg-white text-gray-600 border border-gray-300'}`}> {/* Adjusted colors */}
+                            {index + 1 < currentStep ? <IconCheck /> : <span className="text-sm font-bold">{index + 1}</span>}</div>
+                        <span className={`mt-2 text-xs font-semibold ${index + 1 <= currentStep ? 'text-blue-700' : 'text-gray-500'}`}>{step}</span> {/* Adjusted text colors */}
+                    </div>))}</div></div></div>
+                )}
+                <main>{renderStep()}</main>
+                 {/* Footer Buttons Adjusted */}
+                {currentStep < 4 && !isLoading && (
+                    <footer className="max-w-5xl mx-auto px-4 mt-8">
+                        <div className={`flex ${currentStep === 1 ? 'justify-end' : 'justify-between'} items-center`}>
+                            {currentStep > 1 && ( // Only show Back button from Step 2 onwards
+                                <button
+                                    onClick={handlePrevious}
+                                    className="px-8 py-3 bg-white text-gray-700 font-bold rounded-xl shadow-md border border-gray-200 hover:bg-gray-100 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    Back
+                                </button>
+                            )}
+                             {/* Always show Next/Calculate button */}
+                            <button
+                                onClick={handleNext}
+                                className="px-8 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white font-black rounded-xl shadow-lg hover:shadow-xl transition transform hover:-translate-y-0.5 flex items-center space-x-2 disabled:opacity-70"
+                            >
+                                <span>{currentStep === 3 ? 'Calculate My Results' : 'Next Step'}</span>
+                                {currentStep < 3 && <IconChevronRight />}
+                            </button>
+                        </div>
+                    </footer>
+                )}
+                {currentStep === 4 && !isLoading && (
+                    <footer className="max-w-5xl mx-auto px-4 mt-8">
+                        <div className="flex justify-center">
+                            <button
+                                onClick={handleReset}
+                                className="px-8 py-3 bg-gradient-to-r from-blue-600 to-indigo-700 text-white font-black rounded-xl shadow-lg hover:shadow-xl transition transform hover:-translate-y-0.5"
+                            >
+                                Start New Simulation
+                            </button>
+                        </div>
+                    </footer>
+                )}
+            </div>
+            <TrustIndicators />
+        </div>
+    );
+};
+
+export default App;
+
