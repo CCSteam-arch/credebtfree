@@ -11,7 +11,27 @@ const firebaseConfig = {
   measurementId: process.env.REACT_APP_FIREBASE_MEASUREMENT_ID,
 };
 
-const app = initializeApp(firebaseConfig);
-const analytics = typeof window !== "undefined" ? getAnalytics(app) : null;
+const required = ["apiKey", "projectId", "appId"];
+const missing = required.filter((k) => !firebaseConfig[k]);
+
+let app = null;
+let analytics = null;
+
+if (missing.length) {
+  // clear, non-fatal dev-time message
+  // eslint-disable-next-line no-console
+  console.error("Firebase config missing required keys:", missing);
+} else {
+  app = initializeApp(firebaseConfig);
+  if (typeof window !== "undefined") {
+    try {
+      analytics = getAnalytics(app);
+    } catch (err) {
+      // analytics can fail in non-browser or restricted envs
+      // eslint-disable-next-line no-console
+      console.warn("Firebase analytics not initialized:", err.message ?? err);
+    }
+  }
+}
 
 export { app, analytics, firebaseConfig };
