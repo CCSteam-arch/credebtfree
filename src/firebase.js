@@ -2,36 +2,16 @@ import { initializeApp } from "firebase/app";
 import { getAnalytics } from "firebase/analytics";
 
 const firebaseConfig = {
-  apiKey: process.env.REACT_APP_FIREBASE_API_KEY,
-  authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.REACT_APP_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.REACT_APP_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.REACT_APP_FIREBASE_APP_ID,
-  measurementId: process.env.REACT_APP_FIREBASE_MEASUREMENT_ID,
+  apiKey: "AIzaSyCCx3Q5EgITt_9lZBBxVjOp_BqAIwR4BXU",
+  authDomain: "ccs-10-28.firebaseapp.com",
+  projectId: "ccs-10-28",
+  storageBucket: "ccs-10-28.firebasestorage.app",
+  messagingSenderId: "162624755423",
+  appId: "1:162624755423:web:fec9a957c1d27669197b6a",
+  measurementId: "G-MBLX5EGTM0"
 };
 
-const required = ["apiKey", "projectId", "appId"];
-const missing = required.filter((k) => !firebaseConfig[k]);
+const app = initializeApp(firebaseConfig);
+const analytics = getAnalytics(app);
 
-let app = null;
-let analytics = null;
-
-if (missing.length) {
-  // clear, non-fatal dev-time message
-  // eslint-disable-next-line no-console
-  console.error("Firebase config missing required keys:", missing);
-} else {
-  app = initializeApp(firebaseConfig);
-  if (typeof window !== "undefined") {
-    try {
-      analytics = getAnalytics(app);
-    } catch (err) {
-      // analytics can fail in non-browser or restricted envs
-      // eslint-disable-next-line no-console
-      console.warn("Firebase analytics not initialized:", err.message ?? err);
-    }
-  }
-}
-
-export { app, analytics, firebaseConfig };
+export { app, analytics };
