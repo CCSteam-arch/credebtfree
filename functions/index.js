@@ -1,74 +1,87 @@
-// functions/index.js
-
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
-// REMOVED: const { RecaptchaEnterpriseServiceClient } = require('@google-cloud/recaptcha-enterprise'); // Not needed for App Check context.app verification
-const { setGlobalOptions } = require("firebase-functions");
-const logger = require("firebase-functions/logger"); // For structured logging
+const { RecaptchaEnterpriseServiceClient } = require('@google-cloud/recaptcha-enterprise');
 
-// --- Global Options and Initialization ---
-setGlobalOptions({ maxInstances: 10 });
 admin.initializeApp();
 
-// --- Main Cloud Function: sendResultsEmail ---
+const PROJECT_ID = "ccs-10-28";
+const RECAPTCHA_SITE_KEY = "6Ld8JgEsAAAAAJfQBBNCdWxrObszFn9LCunW1zuL";
+const EXPECTED_ACTION = "send_results_email"; // This should match your frontend action
+
+async function createAssessment({
+  projectID = PROJECT_ID,
+  recaptchaKey = RECAPTCHA_SITE_KEY,
+  token,
+  recaptchaAction = EXPECTED_ACTION,
+}) {
+  const client = new RecaptchaEnterpriseServiceClient();
+  const projectPath = client.projectPath(projectID);
+
+  const request = {
+    assessment: {
+      event: {
+        token: token,
+        siteKey: recaptchaKey,
+      },
+    },
+    parent: projectPath,
+  };
+
+  const [response] = await client.createAssessment(request);
+
+  if (!response.tokenProperties.valid) {
+    console.log(`The CreateAssessment call failed because the token was: ${response.tokenProperties.invalidReason}`);
+    return null;
+  }
+
+  if (response.tokenProperties.action !== recaptchaAction) {
+    console.log("The action attribute in your reCAPTCHA tag does not match the action you are expecting to score");
+    return null;
+  }
+
+  console.log(`The reCAPTCHA score is: ${response.riskAnalysis.score}`);
+  response.riskAnalysis.reasons.forEach((reason) => {
+    console.log(reason);
+  });
+
+  return response.riskAnalysis.score;
+}
+
 exports.sendResultsEmail = functions.https.onCall(async (data, context) => {
-  // --- Firebase App Check Verification ---
-  // If context.app is undefined, it means the request did not come from
-  // an App Check verified app, or the token was invalid/missing.
-  if (context.app === undefined) {
-    logger.error('sendResultsEmail: Function must be called from an App Check verified app.', {
-      auth: context.auth,
-      appId: context.appId // Log this carefully; ensure it's not sensitive info if public
-    });
-    throw new functions.https.HttpsError(
-      'unauthenticated',
-      'The function must be called from an App Check verified app.'
-    );
+  const { name, email, state, phoneNumber, recaptchaToken, results, userData } = data;
+
+  if (!recaptchaToken) {
+    throw new functions.https.HttpsError('invalid-argument', 'reCAPTCHA token is missing.');
   }
 
-  // App Check passed! Now, get your data.
-  // We no longer expect a 'recaptchaToken' in the data payload.
-  const { name, email, state, phoneNumber, results, userData } = data;
-
-  // --- Input Validation (Basic) ---
-  // recaptchaToken is no longer required in 'data'
-  if (!name || !email || !state) {
-    logger.error('sendResultsEmail: Missing required fields in request data.', { data });
-    throw new functions.https.HttpsError(
-      'invalid-argument',
-      'Missing name, email, or state.'
-    );
-  }
-
-  // --- 2. Proceed with your core logic if App Check passed ---
+  let score;
   try {
-    logger.info('sendResultsEmail: App Check passed, proceeding with core logic.', { email });
+    score = await createAssessment({
+      token: recaptchaToken,
+      recaptchaAction: EXPECTED_ACTION,
+    });
+    if (score === null) {
+      throw new functions.https.HttpsError('permission-denied', 'reCAPTCHA verification failed.');
+    }
+    const MIN_ACCEPTABLE_SCORE = 0.7;
+    if (score < MIN_ACCEPTABLE_SCORE) {
+      throw new functions.https.HttpsError('permission-denied', 'reCAPTCHA score too low. Request blocked.');
+    }
+  } catch (err) {
+    console.error("Error during reCAPTCHA Enterprise verification:", err);
+    throw new functions.https.HttpsError('internal', 'Failed to verify reCAPTCHA. Please try again later.');
+  }
 
-    // TODO: Implement your email sending logic here
-    // You would use a library like Nodemailer and an email service (SendGrid, Mailgun, etc.)
-    logger.log(`[TODO] Email sending logic for ${email} would go here. Data:`, { name, email, results, userData });
-
-    // TODO: If you want to save the request to Firestore (optional)
-    // await admin.firestore().collection("userRequests").add({
-    //   name,
-    //   email,
-    //   state,
-    //   phoneNumber: phoneNumber || null,
-    //   results,
-    //   userData,
-    //   appCheckVerified: true, // App Check status can be stored
-    //   // If you retrieved a recaptchaScore from context.app, you could save it here too:
-    //   // recaptchaScore: context.app.recaptcha_score,
-    //   timestamp: admin.firestore.FieldValue.serverTimestamp(),
+  // --- Your core logic here (e.g., send email, save to Firestore) ---
+  try {
+    // Example: Save to Firestore
+    // await admin.firestore().collection("processedRequests").add({
+    //   name, email, state, phoneNumber, results, userData, timestamp: admin.firestore.FieldValue.serverTimestamp()
     // });
 
     return { status: "success", message: "Results email sent successfully!" };
-
   } catch (error) {
-    logger.error("sendResultsEmail: Error in core logic (e.g., email sending, Firestore write):", error);
-    throw new functions.https.HttpsError(
-      'internal',
-      'Failed to process results due to an internal error.'
-    );
+    console.error("Error sending results email:", error);
+    throw new functions.https.HttpsError('internal', 'Failed to send results email.', error.message);
   }
 });
