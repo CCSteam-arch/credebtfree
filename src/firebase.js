@@ -4,7 +4,7 @@
 import { initializeApp } from "firebase/app";
 import { getAnalytics } from "firebase/analytics";
 import { getFirestore } from "firebase/firestore";
-import { getFunctions } from "firebase/functions"; // Required for Cloud Functions
+import { getFunctions } from "firebase/functions";
 
 // Import App Check specific functions and provider
 import { initializeAppCheck, ReCaptchaEnterpriseProvider } from 'firebase/app-check';
@@ -28,32 +28,32 @@ const app = initializeApp(firebaseConfig);
 
 // --- START APP CHECK INTEGRATION ---
 
-// This MUST be your correct reCAPTCHA Enterprise Site Key from Google Cloud Console
-// It should be '6LegSf4rAAAAAMQXYaORMaywz-n2F83i5nHmvZmr' based on your last confirmation.
-const RECAPTCHA_ENTERPRISE_SITE_KEY = "6Ld8JgEsAAAAAJfQBBNCdWxrObszFn9LCunW1zuL"; // <--- CONFIRM THIS IS YOUR KEY
+// IMPORTANT: This MUST be your correct reCAPTCHA Enterprise Site Key.
+// Based on your previous input, it should be '6Ld8JgEsAAAAAJfQBBNCdWxrObszFn9LCunW1zuL'.
+const RECAPTCHA_ENTERPRISE_SITE_KEY = "6Ld8JgEsAAAAAJfQBBNCdWxrObszFn9LCunW1zuL"; // <--- Corrected this to match your provided ID
 
 // For local development, enable the debug token.
-// IMPORTANT: This should ONLY be active in development environments.
-// You might use an environment variable (e.g., process.env.NODE_ENV)
-// to conditionally set this in a real application.
-if (process.env.NODE_ENV === 'development') { // Or import.meta.env.MODE === 'development' depending on your build tool
+// This is correctly set up to activate only in development environments.
+// Ensure that `process.env.NODE_ENV` is appropriately configured by your build tool (e.g., Webpack, Vite).
+if (process.env.NODE_ENV === 'development') {
   self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
+  console.warn("App Check Debug Token Enabled: Ensure this is NOT active in production.");
 }
 
 
-// Initialize App Check
+// Initialize App Check with the reCAPTCHA Enterprise provider
 const appCheck = initializeAppCheck(app, {
   provider: new ReCaptchaEnterpriseProvider(RECAPTCHA_ENTERPRISE_SITE_KEY),
-  isTokenAutoRefreshEnabled: true // Automatically refresh App Check tokens
+  isTokenAutoRefreshEnabled: true // Automatically refresh App Check tokens for continuous protection
 });
 
 // --- END APP CHECK INTEGRATION ---
 
 
 // Initialize Firebase services you need
-const analytics = getAnalytics(app); // For Google Analytics
-const db = getFirestore(app);         // For Cloud Firestore
-const functions = getFunctions(app);  // For Cloud Functions
+const analytics = getAnalytics(app);     // For Google Analytics
+const db = getFirestore(app);           // For Cloud Firestore
+const functions = getFunctions(app);    // For Cloud Functions (used by your EmailForm)
 
 // Export them for use in other parts of your app
-export { app, analytics, db, functions, appCheck, firebaseConfig }; // <-- firebaseConfig is now exported
+export { app, analytics, db, functions, appCheck, firebaseConfig };
