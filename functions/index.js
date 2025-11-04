@@ -1,32 +1,74 @@
-/**
- * Import function triggers from their respective submodules:
- *
- * const {onCall} = require("firebase-functions/v2/https");
- * const {onDocumentWritten} = require("firebase-functions/v2/firestore");
- *
- * See a full list of supported triggers at https://firebase.google.com/docs/functions
- */
+// functions/index.js
 
-const {setGlobalOptions} = require("firebase-functions");
-const {onRequest} = require("firebase-functions/https");
-const logger = require("firebase-functions/logger");
+const functions = require("firebase-functions");
+const admin = require("firebase-admin");
+// REMOVED: const { RecaptchaEnterpriseServiceClient } = require('@google-cloud/recaptcha-enterprise'); // Not needed for App Check context.app verification
+const { setGlobalOptions } = require("firebase-functions");
+const logger = require("firebase-functions/logger"); // For structured logging
 
-// For cost control, you can set the maximum number of containers that can be
-// running at the same time. This helps mitigate the impact of unexpected
-// traffic spikes by instead downgrading performance. This limit is a
-// per-function limit. You can override the limit for each function using the
-// `maxInstances` option in the function's options, e.g.
-// `onRequest({ maxInstances: 5 }, (req, res) => { ... })`.
-// NOTE: setGlobalOptions does not apply to functions using the v1 API. V1
-// functions should each use functions.runWith({ maxInstances: 10 }) instead.
-// In the v1 API, each function can only serve one request per container, so
-// this will be the maximum concurrent request count.
+// --- Global Options and Initialization ---
 setGlobalOptions({ maxInstances: 10 });
+admin.initializeApp();
 
-// Create and deploy your first functions
-// https://firebase.google.com/docs/functions/get-started
+// --- Main Cloud Function: sendResultsEmail ---
+exports.sendResultsEmail = functions.https.onCall(async (data, context) => {
+  // --- Firebase App Check Verification ---
+  // If context.app is undefined, it means the request did not come from
+  // an App Check verified app, or the token was invalid/missing.
+  if (context.app === undefined) {
+    logger.error('sendResultsEmail: Function must be called from an App Check verified app.', {
+      auth: context.auth,
+      appId: context.appId // Log this carefully; ensure it's not sensitive info if public
+    });
+    throw new functions.https.HttpsError(
+      'unauthenticated',
+      'The function must be called from an App Check verified app.'
+    );
+  }
 
-// exports.helloWorld = onRequest((request, response) => {
-//   logger.info("Hello logs!", {structuredData: true});
-//   response.send("Hello from Firebase!");
-// });
+  // App Check passed! Now, get your data.
+  // We no longer expect a 'recaptchaToken' in the data payload.
+  const { name, email, state, phoneNumber, results, userData } = data;
+
+  // --- Input Validation (Basic) ---
+  // recaptchaToken is no longer required in 'data'
+  if (!name || !email || !state) {
+    logger.error('sendResultsEmail: Missing required fields in request data.', { data });
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'Missing name, email, or state.'
+    );
+  }
+
+  // --- 2. Proceed with your core logic if App Check passed ---
+  try {
+    logger.info('sendResultsEmail: App Check passed, proceeding with core logic.', { email });
+
+    // TODO: Implement your email sending logic here
+    // You would use a library like Nodemailer and an email service (SendGrid, Mailgun, etc.)
+    logger.log(`[TODO] Email sending logic for ${email} would go here. Data:`, { name, email, results, userData });
+
+    // TODO: If you want to save the request to Firestore (optional)
+    // await admin.firestore().collection("userRequests").add({
+    //   name,
+    //   email,
+    //   state,
+    //   phoneNumber: phoneNumber || null,
+    //   results,
+    //   userData,
+    //   appCheckVerified: true, // App Check status can be stored
+    //   // If you retrieved a recaptchaScore from context.app, you could save it here too:
+    //   // recaptchaScore: context.app.recaptcha_score,
+    //   timestamp: admin.firestore.FieldValue.serverTimestamp(),
+    // });
+
+    return { status: "success", message: "Results email sent successfully!" };
+
+  } catch (error) {
+    logger.error("sendResultsEmail: Error in core logic (e.g., email sending, Firestore write):", error);
+    throw new functions.https.HttpsError(
+      'internal',
+      'Failed to process results due to an internal error.'
+    );
+  }
+});

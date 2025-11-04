@@ -1,119 +1,143 @@
-import React, { useState } from "react";
-import emailjs from "emailjs-com";
-import ReCAPTCHA from "react-google-recaptcha";
-import { getFunctions, httpsCallable } from "firebase/functions";
-import { app } from "./firebase"; // Make sure this path matches your project
+// src/EmailForm.js
+
+import React, { useState } from 'react';
+import { httpsCallable } from 'firebase/functions';
+// We only import 'functions' here. 'app' is not directly used in this component after cleanup.
+import { functions } from './firebase';
+
+// Initialize the callable Cloud Function once outside the component
+const sendResultsEmailCallable = httpsCallable(functions, 'sendResultsEmail');
 
 const EmailForm = ({ results, userData }) => {
   const [leadName, setLeadName] = useState('');
   const [leadEmail, setLeadEmail] = useState('');
   const [leadState, setLeadState] = useState('');
   const [leadPhone, setLeadPhone] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [leadStatus, setLeadStatus] = useState('');
-  const [recaptchaValue, setRecaptchaValue] = useState(null);
+  const [messageType, setMessageType] = useState('');
 
-  const handleLeadSubmit = async (e) => {
+  // ALL MANUAL RECAPTCHA ENTERPRISE INTEGRATION CODE (useEffect, RECAPTCHA_ENTERPRISE_SITE_KEY, grecaptcha.enterprise.execute())
+  // HAS BEEN REMOVED FROM THIS FILE. Firebase App Check handles this automatically in firebase.js.
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!recaptchaValue) {
-      setLeadStatus("Please complete the reCAPTCHA.");
+    setIsSubmitting(true);
+    setLeadStatus('');
+    setMessageType('');
+
+    if (!leadName || !leadEmail || !leadState) {
+      setLeadStatus('Please fill in all required fields (Name, Email, State).');
+      setMessageType('error');
+      setIsSubmitting(false);
       return;
     }
-    setLeadStatus('Sending...');
 
-    // --- Call Firebase Cloud Function (optional, if set up) ---
     try {
-      const functions = getFunctions(app);
-      const processRequest = httpsCallable(functions, "processUserRequest");
-      await processRequest({
+      // Firebase App Check automatically generates and attaches a token to
+      // all requests to Firebase services, including httpsCallable functions.
+      // We no longer need to generate or pass 'recaptchaToken' manually.
+      const response = await sendResultsEmailCallable({
         name: leadName,
         email: leadEmail,
-        resultsData: {
-          initial_score: results.initialScore,
-          projected_score: results.projectedScore,
-          total_score_gain: results.totalImprovement,
-          estimated_savings: (Number(userData.totalDebt) * 0.55).toLocaleString(),
-          confidence_level: results.confidenceLevel,
-          state: leadState,
-          phone: leadPhone,
-        }
+        state: leadState,
+        phoneNumber: leadPhone || null,
+        // REMOVED: recaptchaToken: recaptchaToken, // App Check handles this automatically
+        results: results,
+        userData: userData,
       });
-    } catch (error) {
-      // This is optional: you can show an error or just log it
-      console.error("Cloud Function error:", error);
-    }
 
-    // --- Send Email via EmailJS ---
-    try {
-      await emailjs.send(
-        'service_afcxuea',        // Your Service ID
-        'template_567twzd',       // Your Template ID
-        {
-          user_first_name: leadName,
-          email: leadEmail,
-          state: leadState,
-          phone: leadPhone,
-          initial_score: results.initialScore,
-          projected_score: results.projectedScore,
-          total_score_gain: results.totalImprovement,
-          estimated_savings: (Number(userData.totalDebt) * 0.55).toLocaleString(),
-          confidence_level: results.confidenceLevel,
-          products_html: '', // Add HTML if you want to show products, else leave blank
-          unsubscribe_url: 'https://credebtfree.com/unsubscribe' // Or your real unsubscribe link
-        },
-        'oVRNTMb5UrIgnZMKF'       // Your EmailJS Public Key
-      );
-      setLeadStatus('Thank you! Your results have been sent.');
-    } catch (e) {
-      setLeadStatus('Error. Please try again.');
+      if (response.data.status === 'success') {
+        setLeadStatus('Thank you! Your results have been sent to your email.');
+        setMessageType('success');
+        setLeadName(''); setLeadEmail(''); setLeadState(''); setLeadPhone('');
+      } else {
+        setLeadStatus(response.data.message || 'Failed to send results. Please try again.');
+        setMessageType('error');
+      }
+
+    } catch (error) {
+      console.error("Error calling Cloud Function:", error);
+      let userFacingErrorMessage = 'An unexpected error occurred. Please try again.';
+
+      if (error.code && error.message) {
+        if (error.details && error.details.message) {
+          userFacingErrorMessage = `Error: ${error.details.message}`;
+        } else {
+          userFacingErrorMessage = `Error: ${error.message}`;
+        }
+      }
+      setLeadStatus(userFacingErrorMessage);
+      setMessageType('error');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   return (
-    <div className="max-w-md mx-auto mt-10 p-6 bg-white rounded-xl shadow-lg border border-gray-200">
-      <h3 className="text-lg font-bold mb-2">FICO-Based Precision Recovery Solutions</h3>
-      <form onSubmit={handleLeadSubmit} className="space-y-4">
-        <input
-          type="text"
-          placeholder="Your Name"
-          value={leadName}
-          onChange={e => setLeadName(e.target.value)}
-          required
-          className="w-full px-4 py-2 border rounded"
-        />
-        <input
-          type="email"
-          placeholder="Your Email"
-          value={leadEmail}
-          onChange={e => setLeadEmail(e.target.value)}
-          required
-          className="w-full px-4 py-2 border rounded"
-        />
-        <input
-          type="text"
-          placeholder="Your State"
-          value={leadState}
-          onChange={e => setLeadState(e.target.value)}
-          required
-          className="w-full px-4 py-2 border rounded"
-        />
-        <input
-          type="tel"
-          placeholder="Your Phone (optional)"
-          value={leadPhone}
-          onChange={e => setLeadPhone(e.target.value)}
-          className="w-full px-4 py-2 border rounded"
-        />
-        <ReCAPTCHA
-          sitekey="6LeR9vwrAAAAALZ1YI9f0bWfAEZ8sNflBS4oj2zh"
-          onChange={value => setRecaptchaValue(value)}
-        />
+    <div className="mt-8 p-6 bg-gray-50 rounded-lg shadow-inner">
+      <h3 className="text-xl font-bold text-gray-800 mb-4">Send Your Results</h3>
+      <form onSubmit={handleSubmit}>
+        <div className="mb-4">
+          <label htmlFor="name" className="block text-gray-700 text-sm font-bold mb-2">Name:</label>
+          <input
+            type="text"
+            id="name"
+            value={leadName}
+            onChange={(e) => setLeadName(e.target.value)}
+            className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+            required
+            disabled={isSubmitting}
+          />
+        </div>
+        <div className="mb-4">
+          <label htmlFor="email" className="block text-gray-700 text-sm font-bold mb-2">Email:</label>
+          <input
+            type="email"
+            id="email"
+            value={leadEmail}
+            onChange={(e) => setLeadEmail(e.target.value)}
+            className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+            required
+            disabled={isSubmitting}
+          />
+        </div>
+        <div className="mb-4">
+          <label htmlFor="state" className="block text-gray-700 text-sm font-bold mb-2">State:</label>
+          <input
+            type="text"
+            id="state"
+            value={leadState}
+            onChange={(e) => setLeadState(e.target.value)}
+            className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+            required
+            disabled={isSubmitting}
+          />
+        </div>
+        <div className="mb-6">
+          <label htmlFor="phoneNumber" className="block text-gray-700 text-sm font-bold mb-2">Phone Number (Optional):</label>
+          <input
+            type="tel"
+            id="phoneNumber"
+            value={leadPhone}
+            onChange={(e) => setLeadPhone(e.target.value)}
+            className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+            disabled={isSubmitting}
+          />
+        </div>
         <button
           type="submit"
-          className="w-full bg-blue-600 text-white font-bold py-2 rounded hover:bg-blue-700 transition"
+          disabled={isSubmitting}
+          className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline disabled:opacity-50"
         >
-          Send My Results
+          {isSubmitting ? 'Sending...' : 'Send My Results'}
         </button>
-        {leadStatus && <div className="text-center text-sm mt-2">{leadStatus}</div>}
+
+        {leadStatus && (
+          <p className={`mt-4 font-semibold ${messageType === 'success' ? 'text-green-600' : 'text-red-600'} text-sm`}>
+            {leadStatus}
+          </p>
+        )}
       </form>
     </div>
   );
