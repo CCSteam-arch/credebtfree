@@ -1,74 +1,58 @@
 // src/EmailForm.js
 
-import React, { useState } from 'react';
-import { httpsCallable } from 'firebase/functions';
-// We only import 'functions' here. 'app' is not directly used in this component after cleanup.
-import { functions } from './firebase';
-
-// Initialize the callable Cloud Function once outside the component
-const sendResultsEmailCallable = httpsCallable(functions, 'sendResultsEmail');
+import React, { useState } from "react";
+import { functions } from "./firebase";
+import { httpsCallable } from "firebase/functions";
 
 const EmailForm = ({ results, userData }) => {
-  const [leadName, setLeadName] = useState('');
-  const [leadEmail, setLeadEmail] = useState('');
-  const [leadState, setLeadState] = useState('');
-  const [leadPhone, setLeadPhone] = useState('');
+  const [leadName, setLeadName] = useState("");
+  const [leadEmail, setLeadEmail] = useState("");
+  const [leadState, setLeadState] = useState("");
+  const [leadPhone, setLeadPhone] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [leadStatus, setLeadStatus] = useState('');
-  const [messageType, setMessageType] = useState('');
-
-  // ALL MANUAL RECAPTCHA ENTERPRISE INTEGRATION CODE (useEffect, RECAPTCHA_ENTERPRISE_SITE_KEY, grecaptcha.enterprise.execute())
-  // HAS BEEN REMOVED FROM THIS FILE. Firebase App Check handles this automatically in firebase.js.
+  const [leadStatus, setLeadStatus] = useState("");
+  const [messageType, setMessageType] = useState("");
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
-    setLeadStatus('');
-    setMessageType('');
+    setLeadStatus("");
+    setMessageType("");
 
     if (!leadName || !leadEmail || !leadState) {
-      setLeadStatus('Please fill in all required fields (Name, Email, State).');
-      setMessageType('error');
+      setLeadStatus("Please fill in all required fields (Name, Email, State).");
+      setMessageType("error");
       setIsSubmitting(false);
       return;
     }
 
     try {
-      // Firebase App Check automatically generates and attaches a token to
-      // all requests to Firebase services, including httpsCallable functions.
-      // We no longer need to generate or pass 'recaptchaToken' manually.
-      const response = await sendResultsEmailCallable({
+      const sendResultsEmail = httpsCallable(functions, "sendResultsEmail");
+      const response = await sendResultsEmail({
         name: leadName,
         email: leadEmail,
         state: leadState,
         phoneNumber: leadPhone || null,
-        // REMOVED: recaptchaToken: recaptchaToken, // App Check handles this automatically
-        results: results,
-        userData: userData,
+        // recaptchaToken removed
+        results,
+        userData,
       });
 
-      if (response.data.status === 'success') {
-        setLeadStatus('Thank you! Your results have been sent to your email.');
-        setMessageType('success');
-        setLeadName(''); setLeadEmail(''); setLeadState(''); setLeadPhone('');
+      if (response.data?.status === "success") {
+        setLeadStatus("Thank you! Your results have been sent to your email.");
+        setMessageType("success");
+        setLeadName("");
+        setLeadEmail("");
+        setLeadState("");
+        setLeadPhone("");
       } else {
-        setLeadStatus(response.data.message || 'Failed to send results. Please try again.');
-        setMessageType('error');
+        setLeadStatus(response.data?.message || "Failed to send results. Please try again.");
+        setMessageType("error");
       }
-
     } catch (error) {
-      console.error("Error calling Cloud Function:", error);
-      let userFacingErrorMessage = 'An unexpected error occurred. Please try again.';
-
-      if (error.code && error.message) {
-        if (error.details && error.details.message) {
-          userFacingErrorMessage = `Error: ${error.details.message}`;
-        } else {
-          userFacingErrorMessage = `Error: ${error.message}`;
-        }
-      }
-      setLeadStatus(userFacingErrorMessage);
-      setMessageType('error');
+      console.error(error);
+      setLeadStatus("Error sending results. Please try again.");
+      setMessageType("error");
     } finally {
       setIsSubmitting(false);
     }
@@ -130,11 +114,10 @@ const EmailForm = ({ results, userData }) => {
           disabled={isSubmitting}
           className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline disabled:opacity-50"
         >
-          {isSubmitting ? 'Sending...' : 'Send My Results'}
+          {isSubmitting ? "Sending..." : "Send My Results"}
         </button>
-
         {leadStatus && (
-          <p className={`mt-4 font-semibold ${messageType === 'success' ? 'text-green-600' : 'text-red-600'} text-sm`}>
+          <p className={`mt-4 font-semibold ${messageType === "success" ? "text-green-600" : "text-red-600"} text-sm`}>
             {leadStatus}
           </p>
         )}
